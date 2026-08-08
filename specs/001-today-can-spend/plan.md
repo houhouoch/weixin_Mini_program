@@ -7,6 +7,7 @@ pages/index (展示与交互)
   -> services/budget-store (预算与月份生命周期，Promise)
   -> services/transactions (仅 addTransaction/listTransactions，Promise)
   -> services/analytics (trackEvent 隐私过滤)
+  -> domain/categories (分类白名单与展示名)
   -> domain/budget (纯计算)
   -> domain/date (纯日期)
   -> infrastructure/storage (唯一微信缓存边界)
@@ -22,26 +23,27 @@ pages/index (展示与交互)
 - `domain/money.js`：金额解析/格式化。
 - `domain/date.js`：月键、日键、剩余天数。
 - `domain/budget.js`：预算派生与状态。
+- `domain/categories.js`：固定分类白名单与展示名。
 - `infrastructure/storage.js`：Promise 化微信缓存。
 - `services/budget-store.js`：设置、读取、重置、跨月。
 - `services/transactions.js`：添加、删除命令、列表。
 - `services/analytics.js`：统一隐私安全事件。
 - `tests/*.test.js`：Node 内建测试。
 - `scripts/check-structure.js`：页面数、缓存边界、分享和文件结构检查。
-- `preview/`：独立浏览器视觉预览，不参与小程序运行。
+- `assets/images/`：小程序直接使用的本地原创视觉资产。
 
 ## 实施顺序
 
 1. 纯金额/日期/预算逻辑与测试；
-2. 存储边界与服务；
-3. 页面状态机与交互；
-4. 样式和响应式；
+2. 存储边界、交易字段迁移与服务；
+3. 分类、用途、金额页面状态机与交互；
+4. ImageGen 原创资产、Figma 高保真稿、样式和响应式；
 5. 分享与埋点；
-6. 自动化检查、Open Design/Figma 预览和开发者工具验证说明。
+6. 自动化检查、Figma 预览和开发者工具验证说明。
 
 ## 验证策略
 
 - `node --test tests/*.test.js`：公式、边界、日期、服务幂等、损坏存储。
 - `node scripts/check-structure.js`：单页、无 tabBar、页面无缓存 API、分享入口和所需文件。
-- 浏览器预览截图：375px 与窄屏布局。
+- Figma 截图：375px 视觉、插画、表单和票据列表检查。
 - 微信开发者工具：导入、编译、分享生命周期、键盘、系统弹窗、安全区；若本机不可自动操作则标记待验证。

@@ -6,8 +6,8 @@
   </view>
 
   <view class="page-topbar">
-    <view>
-      <text class="page-kicker">TODAY'S SAFE SPEND</text>
+    <view class="page-topbar__copy">
+      <text class="page-title">今天还能花</text>
       <text class="date-label">{{dateLabel}}</text>
     </view>
     <button
@@ -31,112 +31,134 @@
   </view>
 
   <block wx:if="{{viewState === 'ready'}}">
-    <view class="hero-card hero-card--{{statusTone}}">
-      <view class="hero-orb hero-orb--one"></view>
-      <view class="hero-orb hero-orb--two"></view>
+    <view class="hero-card">
+      <image
+        class="hero-art"
+        src="/assets/images/spending-journey-hero-v2.png"
+        mode="aspectFill"
+        aria-label="由咖啡、交通、购物和小票组成的日常消费插画"
+      />
+      <view class="hero-copy-paper"></view>
       <view class="hero-content">
         <text class="hero-eyebrow">今天还能花</text>
         <view class="hero-amount {{amountSizeClass}}">
           <text class="hero-currency">¥</text>
           <text>{{result.todayRemainingText}}</text>
         </view>
-        <text class="hero-status">{{result.statusText}}</text>
+        <text class="hero-status">可以从容花，也知道花去了哪里</text>
+        <text class="hero-badge">{{result.persona}}</text>
       </view>
     </view>
 
-    <view class="metrics-card">
-      <view class="metric-item">
-        <text class="metric-label">今日建议额度</text>
-        <text class="metric-value">¥{{result.todaySuggestedBudgetText}}</text>
+    <view class="budget-rail budget-rail--{{statusTone}}">
+      <view class="budget-rail__labels">
+        <text>今天已花 ¥{{result.todaySpentText}}</text>
+        <text>本月可用 ¥{{result.monthlyRemainingText}}</text>
       </view>
-      <view class="metric-divider"></view>
-      <view class="metric-item">
-        <text class="metric-label">今日已花</text>
-        <text class="metric-value">¥{{result.todaySpentText}}</text>
+      <view class="budget-rail__track">
+        <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
       </view>
-      <view class="metric-divider"></view>
-      <view class="metric-item">
-        <text class="metric-label">本月剩余可用</text>
-        <text class="metric-value {{result.monthlyRemainingNegative ? 'metric-value--danger' : ''}}">¥{{result.monthlyRemainingText}}</text>
-      </view>
+      <text class="budget-rail__helper">建议额度 ¥{{result.todaySuggestedBudgetText}} · {{result.statusText}}</text>
     </view>
 
-    <view class="content-card quick-card">
-      <view class="section-heading">
-        <view>
-          <text class="section-title">快速记一笔</text>
-          <text class="section-copy">花完记下来，下一秒就是新答案。</text>
+    <view class="record-composer">
+      <text class="composer-title">这笔花在哪儿？</text>
+      <text class="composer-copy">先选分类，再补一句用途；不想写也可以直接记。</text>
+
+      <view class="category-grid" role="list">
+        <button
+          wx:for="{{categories}}"
+          wx:key="id"
+          class="category-chip {{selectedCategoryId === item.id ? 'category-chip--selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="handleCategorySelect"
+          aria-label="选择{{item.label}}分类"
+        >{{item.label}}</button>
+      </view>
+
+      <text class="composer-label">用途（可选）</text>
+      <input
+        class="purpose-field"
+        type="text"
+        value="{{noteInput}}"
+        placeholder="例如：咖啡、午餐、地铁"
+        maxlength="20"
+        bindinput="handleNoteInput"
+        aria-label="填写消费用途"
+      />
+
+      <view class="composer-action-row">
+        <view class="composer-amount {{inputError ? 'composer-field--error' : ''}}">
+          <text>¥</text>
+          <input
+            class="composer-amount__input"
+            type="digit"
+            value="{{amountInput}}"
+            placeholder="15.00"
+            maxlength="10"
+            bindinput="handleAmountInput"
+            confirm-type="done"
+            aria-label="输入本次消费金额"
+          />
         </view>
-        <view class="section-step">01</view>
+        <button
+          class="composer-save {{isSaving ? 'composer-save--loading' : ''}}"
+          bindtap="handleAddTransaction"
+          disabled="{{isSaving}}"
+          loading="{{isSaving}}"
+        >{{isSaving ? '保存中…' : '记下这笔'}}</button>
       </view>
-      <text class="field-label">消费金额</text>
-      <view class="amount-field {{inputError ? 'amount-field--error' : ''}}">
-        <text class="amount-field__currency">¥</text>
-        <input
-          class="amount-field__input"
-          type="digit"
-          value="{{amountInput}}"
-          placeholder="0.00"
-          maxlength="10"
-          bindinput="handleAmountInput"
-          confirm-type="done"
-          aria-label="输入本次消费金额"
-        />
+      <view class="composer-feedback" wx:if="{{inputError || feedback}}">
+        <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
+        <text class="field-success" aria-role="status" wx:if="{{feedback}}">{{feedback}}</text>
       </view>
-      <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
-      <text class="field-success" aria-role="status" wx:if="{{feedback}}">{{feedback}}</text>
-      <button
-        class="primary-button {{isSaving ? 'primary-button--loading' : ''}}"
-        bindtap="handleAddTransaction"
-        disabled="{{isSaving}}"
-        loading="{{isSaving}}"
-      >{{isSaving ? '保存中…' : '记一笔'}}</button>
     </view>
 
-    <view class="content-card records-card">
-      <view class="section-heading section-heading--compact">
-        <view>
-          <text class="section-title">最近记录</text>
-          <text class="section-copy">只显示本月最近 5 笔。</text>
+    <view class="receipt-card">
+      <view class="receipt-header">
+        <view class="receipt-header__copy">
+          <text class="receipt-eyebrow">SPENDING RECEIPT · 最近记录</text>
+          <text class="receipt-title">最近花去了哪里</text>
         </view>
-        <view class="record-count">{{transactions.length}} 笔</view>
+        <text class="receipt-count">{{transactions.length}} 笔</text>
       </view>
+      <view class="receipt-perforation"></view>
 
       <view class="empty-records" wx:if="{{recentTransactions.length === 0}}">
-        <view class="empty-records__mark"></view>
-        <text class="empty-records__title">还没有记录</text>
-        <text class="empty-records__copy">花完一笔后记下来就好。</text>
+        <text class="empty-records__title">今天还没有小票</text>
+        <text class="empty-records__copy">选一个分类，记下第一笔去向。</text>
       </view>
 
       <view class="record-list" wx:else>
         <view class="record-row" wx:for="{{recentTransactions}}" wx:key="id">
-          <view class="record-dot"></view>
+          <text class="record-tag record-tag--{{item.categoryId}}">{{item.categoryLabel}}</text>
           <view class="record-main">
+            <text class="record-purpose">{{item.purposeText}}</text>
             <text class="record-time">{{item.occurredAtText}}</text>
-            <text class="record-type">日常消费</text>
           </view>
-          <text class="record-amount">-¥{{item.amountText}}</text>
-          <button
-            class="delete-button"
-            data-id="{{item.id}}"
-            data-amount="{{item.amountText}}"
-            bindtap="handleDeleteTransaction"
-            aria-label="删除这笔消费"
-          >删除</button>
+          <view class="record-tail">
+            <text class="record-amount">- ¥{{item.amountText}}</text>
+            <button
+              class="delete-button"
+              data-id="{{item.id}}"
+              bindtap="handleDeleteTransaction"
+              aria-label="删除{{item.categoryLabel}}{{item.purposeText}}这笔消费"
+            >删除</button>
+          </view>
         </view>
       </view>
+      <text class="receipt-privacy">仅保存在本机 · 分享不带逐笔明细</text>
     </view>
 
-    <view class="share-card">
+    <view class="share-footer">
       <view class="share-card__copy">
-        <text class="share-card__eyebrow">轻轻分享，不带明细</text>
-        <text class="share-card__title">把今天的从容感传给朋友</text>
+        <text class="share-card__title">把今天的从容分享出去</text>
+        <text class="share-card__eyebrow">只分享结果，不分享消费明细</text>
       </view>
       <view class="share-actions">
         <button class="share-button share-button--friend" open-type="share">分享给好友</button>
-        <button class="share-button" bindtap="handleTimelineGuide">朋友圈引导</button>
+        <button class="share-button" bindtap="handleTimelineGuide">朋友圈 · 右上角</button>
       </view>
-      <text class="privacy-note">分享不携带逐笔数据、OPENID 或身份信息。</text>
     </view>
   </block>
 

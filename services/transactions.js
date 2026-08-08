@@ -1,5 +1,8 @@
 const { TRANSACTION_MAX_CENTS } = require('../domain/money');
+const { isValidCategoryId } = require('../domain/categories');
 const { readState, saveState } = require('./state-store');
+
+const NOTE_MAX_LENGTH = 20;
 
 let mutationQueue = Promise.resolve();
 
@@ -19,6 +22,15 @@ function assertCommand(command) {
     }
     if (!Number.isFinite(command.occurredAt)) {
       throw new Error('交易时间无效');
+    }
+    if (!isValidCategoryId(command.categoryId)) {
+      throw new Error('请选择消费分类');
+    }
+    if (command.note !== undefined && typeof command.note !== 'string') {
+      throw new Error('用途说明无效');
+    }
+    if ((command.note || '').trim().length > NOTE_MAX_LENGTH) {
+      throw new Error(`用途说明不能超过 ${NOTE_MAX_LENGTH} 个字`);
     }
     return;
   }
@@ -47,6 +59,8 @@ async function executeCommand(command) {
     transactions.push({
       id: command.transactionId || command.commandId,
       amountCents: command.amountCents,
+      categoryId: command.categoryId,
+      note: (command.note || '').trim(),
       occurredAt: command.occurredAt
     });
   } else {

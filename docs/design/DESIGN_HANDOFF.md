@@ -2,26 +2,38 @@
 
 ## 设计结论
 
-首页采用轻量薄荷绿记账界面，视觉重点依次为“今天还能花”、今日/本月摘要、快速记账、最近记录和隐私分享。页面保持单列、单任务和大触控目标，适配微信小程序的移动端使用场景。
+首页采用“暖色编辑插画 + 预算轨道 + 黄色记录台 + 纸质小票”的单页结构。视觉先回答“今天还能花多少”，记录动作再回答“这笔花在哪儿”，避免只有金额输入和连续白色圆角卡片的通用 AI 界面感。
 
 ## 交付物
 
-- Figma 可编辑稿：[今天还能花｜微信小程序单页预览](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=4-2)
-- Figma 本地快照：`docs/design/figma-preview.png`（515 × 1410）
-- Open Design HTML：`C:\Users\admin\AppData\Roaming\Open Design\namespaces\release-stable-win\data\projects\project-a3ef\today-safe-spend.html`
-- Open Design 品牌规范：`C:\Users\admin\AppData\Roaming\Open Design\namespaces\release-stable-win\data\projects\project-a3ef\brand-spec.md`
-- UI/UX Pro Max 设计系统：`design-system/default/MASTER.md`
-- 首页实现覆盖规则：`design-system/default/pages/home.md`
+- Figma 可编辑稿：[今天还能花 V2｜原创插画记账页](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=7-3)
+- Figma 节点：\`7:3\`（375 × 1366）
+- Figma 本地快照：\`docs/design/figma-preview.png\`（375 × 1366）
+- 原创主视觉：\`assets/images/spending-journey-hero-v2.png\`
+- UI 规范：\`design-system/default/MASTER.md\`
+- 首页覆盖规则：\`design-system/default/pages/home.md\`
+
+## 图片来源
+
+主视觉由 GPT 图像生成能力根据本产品提示词原创生成，内容为咖啡、交通、购物、收据和硬币组成的日常消费路径。原图先上传到 Figma 用于裁切、排版和叠加动态金额；Figma 本身不负责生成这张图片。仓库运行资产压缩为 1024 × 683、约 540 KB 的 PNG，视觉内容不变，避免单张原图挤占微信小程序主包。
+
+图片不含文字、品牌、水印、人物身份或用户消费明细。小程序运行时使用仓库内 PNG，不依赖短期 Figma 资源链接。
+
+## 工具选择
+
+- 本轮正式链路：图像生成 → Figma → 原生 WXML/WXSS。
+- Open Design 已退出当前交付链路。对于这个单页探索稿，它与 Figma 的排版职责重复，且没有提供代码约束、多人批注或批量页面生成等额外收益。
+- 如果未来需要快速生成大量 HTML 页面候选、浏览器响应式原型或非设计人员直接改网页结构，Open Design 才有重新引入的理由。
 
 ## 关键规范
 
-- 主色使用深绿与薄荷绿，背景为低对比暖灰绿，避免高饱和度和装饰性渐变。
-- 核心金额使用最大字号，卡片间距和圆角统一，按钮可触区不小于 44px。
-- 最近记录只显示时间和金额，不引入饮品、杯数或消费分类模型。
-- 分享区明确说明“不包含逐笔明细、OPENID 或身份信息”；分享标题可包含汇总数据。
-- Figma 捕获文本的本机字体不可用时，仅将修正行替换为 `Noto Sans SC Regular`，其余捕获层保持不变。
+- 主色：森林绿 \`#123F35\`；背景：暖纸色 \`#F5EBD7\`；强调：奶油黄 \`#F4B942\`、珊瑚红 \`#E96950\`。
+- 交易字段为“分类 + 可选用途 + 金额 + 时间”；分类固定为餐饮、交通、购物、日用、娱乐、医疗、人情、其他。
+- 最近记录展示分类、用途、时间和金额；用途为空时用分类名补位。
+- 分享区明确“只分享结果，不分享消费明细”，分享路径不携带逐笔数据或身份字段。
+- 主要触控区域按 88rpx 目标设计；不加载网络字体或第三方 UI。
 
 ## 已验证与待验证
 
-- 已验证：Open Design HTML 可加载；Figma 节点已生成；本地快照无裁切；分享隐私文案已修正。
-- 待开发者工具验证：微信导航栏、安全区、数字键盘、系统弹窗、好友分享面板与朋友圈入口的最终视觉。
+- 已验证：原创图片已本地化；Figma 节点完整；375px 快照无横向裁切；分类、用途、小票列表和分享隐私文案均在设计稿中可见。
+- 待开发者工具验证：微信导航栏、安全区、系统字体差异、数字键盘、用途输入、保存状态、删除弹窗、好友分享面板和朋友圈入口。

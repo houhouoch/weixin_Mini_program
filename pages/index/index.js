@@ -1,4 +1,5 @@
 const { deriveBudget } = require('../../domain/budget');
+const { CATEGORIES, getCategoryLabel } = require('../../domain/categories');
 const {
   daysSince,
   formatChineseDate,
@@ -71,6 +72,7 @@ Page({
     amountInput: '',
     amountSizeClass: 'amount-normal',
     budget: null,
+    categories: CATEGORIES,
     dateLabel: '',
     drawerMode: 'first',
     drawerVisible: false,
@@ -81,10 +83,12 @@ Page({
     inputError: '',
     isBudgetSaving: false,
     isSaving: false,
+    noteInput: '',
     readMessage: '',
     recentTransactions: [],
     result: null,
     shareTitle: '今天还能花｜开始我的支出记录',
+    selectedCategoryId: 'food',
     statusTone: 'normal',
     transactions: [],
     viewState: 'loading'
@@ -176,11 +180,19 @@ Page({
     const recentTransactions = transactions.slice(0, 5).map((item) => ({
       id: item.id,
       amountText: formatCents(item.amountCents),
+      categoryId: item.categoryId,
+      categoryLabel: getCategoryLabel(item.categoryId),
+      purposeText: item.note || getCategoryLabel(item.categoryId),
       occurredAtText: formatRecordTime(item.occurredAt, now)
     }));
     const persona = personaForStatus(result.status);
     const useDays = daysSince(budget.trackingStartDate, now);
     const shareTitle = `${persona}｜打卡${useDays}天｜${transactions.length}笔｜本月已花¥${formatCents(result.totalSpentCents)}`;
+    const spentProgressPercent = result.todaySuggestedBudgetCents > 0
+      ? Math.min(100, Math.round(
+        result.todaySpentCents * 100 / result.todaySuggestedBudgetCents
+      ))
+      : result.todaySpentCents > 0 ? 100 : 0;
 
     this.setData({
       amountSizeClass: amountText.length > 9
@@ -192,6 +204,8 @@ Page({
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
+        persona,
+        spentProgressPercent,
         status: result.status,
         statusText: statusCopy(result),
         todayRemainingText: amountText,
@@ -208,6 +222,17 @@ Page({
 
   handleAmountInput(event) {
     this.setData({ amountInput: event.detail.value, inputError: '', feedback: '' });
+  },
+
+  handleCategorySelect(event) {
+    this.setData({
+      selectedCategoryId: event.currentTarget.dataset.id,
+      feedback: ''
+    });
+  },
+
+  handleNoteInput(event) {
+    this.setData({ noteInput: event.detail.value, feedback: '' });
   },
 
   async handleAddTransaction() {
@@ -231,11 +256,14 @@ Page({
       const result = await addTransaction({
         action: 'create',
         amountCents: parsed.value,
+        categoryId: this.data.selectedCategoryId,
         commandId: commandId('create'),
+        note: this.data.noteInput,
         occurredAt: now.getTime()
       });
       this.setData({
         amountInput: '',
+        noteInput: '',
         feedback: result.duplicate ? '这笔记录已经保存过了。' : '已记下，今日额度已更新。'
       });
       wx.hideKeyboard();
@@ -252,10 +280,14 @@ Page({
 
   handleDeleteTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const amountText = event.currentTarget.dataset.amount;
+    const transaction = this.data.transactions.find((item) => item.id === transactionId);
+    if (!transaction) return;
+    const amountText = formatCents(transaction.amountCents);
+    const categoryLabel = getCategoryLabel(transaction.categoryId);
+    const purpose = transaction.note ? ` · ${transaction.note}` : '';
     wx.showModal({
       title: '删除记录',
-      content: `删除这笔 ¥${amountText} 的消费记录？删除后预算会重新计算。`,
+      content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} 记录？删除后预算会重新计算。`,
       confirmText: '删除',
       confirmColor: '#C84F4A',
       success: async (result) => {

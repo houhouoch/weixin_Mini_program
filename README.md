@@ -12,12 +12,14 @@
 
 本项目不需要安装依赖，也没有构建命令。
 
+当前项目目录（排除 `.git`）约 947 KB，其中运行主图约 540 KB，已避免原始大图单独挤占主包；实际上传体积以开发者工具报告为准。
+
 ## 项目结构
 
 ```text
 app.*                         小程序入口与全局样式
 pages/index/                  唯一主页面
-domain/                       金额、日期与预算纯逻辑
+domain/                       金额、日期、分类与预算纯逻辑
 infrastructure/storage.js     唯一微信缓存边界
 services/budget-store.js      设置、重置与跨月
 services/transactions.js      Promise 交易 API（仅 add/list）
@@ -27,7 +29,7 @@ scripts/check-structure.js    单页、存储边界与分享静态检查
 docs/PRD.md                   产品需求文档
 specs/001-today-can-spend/    SDD 规格、计划、任务与验收矩阵
 design-system/                UI 设计系统与首页覆盖规则
-docs/design/                  Figma/Open Design 交付与页面快照
+docs/design/                  Figma 交付、原创图片来源与页面快照
 ```
 
 设计预览与交付链接见 `docs/design/DESIGN_HANDOFF.md`。
@@ -36,17 +38,19 @@ docs/design/                  Figma/Open Design 交付与页面快照
 
 本地存储 key 为 `today-can-spend:v1`，结构包含：
 
-- `schemaVersion`：当前为 1；
+- `schemaVersion`：当前为 2；
 - `monthKey`：`YYYY-MM`；
 - `budget.incomeCents`：本月收入（分）；
 - `budget.fixedExpenseCents`：固定支出（分）；
 - `budget.savingGoalCents`：储蓄目标（分）；
 - `budget.historicalSpentBeforeTrackingCents`：启用前已花（分）；
 - `budget.trackingStartDate`：`YYYY-MM-DD`；
-- `transactions[]`：本月交易，包含本地 ID、金额分和本地时间戳；
+- `transactions[]`：本月交易，包含本地 ID、金额分、分类 ID、可选用途和本地时间戳；
 - `processedCommandIds[]`：最近交易命令 ID，用于幂等防重复。
 
 页面不会直接调用缓存 API。交易模块只公开返回 Promise 的 `addTransaction(command)` 与 `listTransactions()`；删除通过 `addTransaction({ action: 'delete' })` 完成。
+
+固定分类为餐饮、交通、购物、日用、娱乐、医疗、人情、其他；用途最多 20 个字符，只保存在本机，不进入埋点或分享参数。旧版 `schemaVersion: 1` 数据会原地迁移到版本 2，历史记录保留金额和时间，并归入“其他”、用途留空。存储 key 继续使用 `today-can-spend:v1`，避免升级时丢失本机旧数据。
 
 ## 计算公式
 
@@ -77,4 +81,4 @@ node --test tests/*.test.js
 node scripts/check-structure.js
 ```
 
-自动化覆盖金额解析、10 个核心计算/日期/存储场景、交易幂等、跨月沿用和损坏数据降级。微信分享面板、系统弹窗、数字键盘、安全区以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。
+自动化覆盖金额解析、核心计算/日期/存储场景、分类与用途校验、旧数据迁移、交易幂等、跨月沿用和损坏数据降级。微信分享面板、系统弹窗、数字键盘、用途输入、安全区以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。

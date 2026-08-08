@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "今天还能花",
+    "navigationBarBackgroundColor": "#F3F7F2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F3F7F2",
+    "backgroundTextStyle": "dark"
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

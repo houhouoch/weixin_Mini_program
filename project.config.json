@@ -1,0 +1,18 @@
+{
+  "appid": "touristappid",
+  "projectname": "today-can-spend",
+  "description": "今天还能花微信小程序 MVP",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "setting": {
+    "useCompilerPlugins": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "coverView": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "condition": {}
+}

@@ -1,0 +1,221 @@
+<view class="page-shell">
+  <view class="share-entry" wx:if="{{fromShare && viewState !== 'ready'}}">
+    <text class="share-entry__eyebrow">朋友分享给你一个简单的预算方法</text>
+    <text class="share-entry__title">开始我的支出记录</text>
+    <text class="share-entry__copy">数据只会保存在你自己的设备中。</text>
+  </view>
+
+  <view class="page-topbar">
+    <view>
+      <text class="page-kicker">TODAY'S SAFE SPEND</text>
+      <text class="date-label">{{dateLabel}}</text>
+    </view>
+    <button
+      wx:if="{{viewState === 'ready'}}"
+      class="settings-button"
+      bindtap="openSettings"
+      aria-label="修改本月设置"
+    >设置</button>
+  </view>
+
+  <view class="loading-card" wx:if="{{viewState === 'loading'}}">
+    <view class="skeleton skeleton-short"></view>
+    <view class="skeleton skeleton-amount"></view>
+    <view class="skeleton skeleton-copy"></view>
+  </view>
+
+  <view class="error-card" wx:if="{{viewState === 'readError'}}">
+    <text class="error-card__title">暂时没读到本地数据</text>
+    <text class="error-card__copy">{{readMessage}}</text>
+    <button class="secondary-button" bindtap="refreshPage">重新读取</button>
+  </view>
+
+  <block wx:if="{{viewState === 'ready'}}">
+    <view class="hero-card hero-card--{{statusTone}}">
+      <view class="hero-orb hero-orb--one"></view>
+      <view class="hero-orb hero-orb--two"></view>
+      <view class="hero-content">
+        <text class="hero-eyebrow">今天还能花</text>
+        <view class="hero-amount {{amountSizeClass}}">
+          <text class="hero-currency">¥</text>
+          <text>{{result.todayRemainingText}}</text>
+        </view>
+        <text class="hero-status">{{result.statusText}}</text>
+      </view>
+    </view>
+
+    <view class="metrics-card">
+      <view class="metric-item">
+        <text class="metric-label">今日建议额度</text>
+        <text class="metric-value">¥{{result.todaySuggestedBudgetText}}</text>
+      </view>
+      <view class="metric-divider"></view>
+      <view class="metric-item">
+        <text class="metric-label">今日已花</text>
+        <text class="metric-value">¥{{result.todaySpentText}}</text>
+      </view>
+      <view class="metric-divider"></view>
+      <view class="metric-item">
+        <text class="metric-label">本月剩余可用</text>
+        <text class="metric-value {{result.monthlyRemainingNegative ? 'metric-value--danger' : ''}}">¥{{result.monthlyRemainingText}}</text>
+      </view>
+    </view>
+
+    <view class="content-card quick-card">
+      <view class="section-heading">
+        <view>
+          <text class="section-title">快速记一笔</text>
+          <text class="section-copy">花完记下来，下一秒就是新答案。</text>
+        </view>
+        <view class="section-step">01</view>
+      </view>
+      <text class="field-label">消费金额</text>
+      <view class="amount-field {{inputError ? 'amount-field--error' : ''}}">
+        <text class="amount-field__currency">¥</text>
+        <input
+          class="amount-field__input"
+          type="digit"
+          value="{{amountInput}}"
+          placeholder="0.00"
+          maxlength="10"
+          bindinput="handleAmountInput"
+          confirm-type="done"
+          aria-label="输入本次消费金额"
+        />
+      </view>
+      <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
+      <text class="field-success" aria-role="status" wx:if="{{feedback}}">{{feedback}}</text>
+      <button
+        class="primary-button {{isSaving ? 'primary-button--loading' : ''}}"
+        bindtap="handleAddTransaction"
+        disabled="{{isSaving}}"
+        loading="{{isSaving}}"
+      >{{isSaving ? '保存中…' : '记一笔'}}</button>
+    </view>
+
+    <view class="content-card records-card">
+      <view class="section-heading section-heading--compact">
+        <view>
+          <text class="section-title">最近记录</text>
+          <text class="section-copy">只显示本月最近 5 笔。</text>
+        </view>
+        <view class="record-count">{{transactions.length}} 笔</view>
+      </view>
+
+      <view class="empty-records" wx:if="{{recentTransactions.length === 0}}">
+        <view class="empty-records__mark"></view>
+        <text class="empty-records__title">还没有记录</text>
+        <text class="empty-records__copy">花完一笔后记下来就好。</text>
+      </view>
+
+      <view class="record-list" wx:else>
+        <view class="record-row" wx:for="{{recentTransactions}}" wx:key="id">
+          <view class="record-dot"></view>
+          <view class="record-main">
+            <text class="record-time">{{item.occurredAtText}}</text>
+            <text class="record-type">日常消费</text>
+          </view>
+          <text class="record-amount">-¥{{item.amountText}}</text>
+          <button
+            class="delete-button"
+            data-id="{{item.id}}"
+            data-amount="{{item.amountText}}"
+            bindtap="handleDeleteTransaction"
+            aria-label="删除这笔消费"
+          >删除</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="share-card">
+      <view class="share-card__copy">
+        <text class="share-card__eyebrow">轻轻分享，不带明细</text>
+        <text class="share-card__title">把今天的从容感传给朋友</text>
+      </view>
+      <view class="share-actions">
+        <button class="share-button share-button--friend" open-type="share">分享给好友</button>
+        <button class="share-button" bindtap="handleTimelineGuide">朋友圈引导</button>
+      </view>
+      <text class="privacy-note">分享不携带逐笔数据、OPENID 或身份信息。</text>
+    </view>
+  </block>
+
+  <view class="legal-note">本结果仅用于日常预算参考，不构成理财建议。</view>
+</view>
+
+<view class="drawer-layer" wx:if="{{drawerVisible}}" catchtouchmove="noop">
+  <view class="drawer-mask" bindtap="closeDrawer"></view>
+  <view class="settings-drawer">
+    <view class="drawer-handle"></view>
+    <view class="drawer-header">
+      <view>
+        <text class="drawer-eyebrow">{{drawerMode === 'first' ? '先把本月的边界说清楚' : '调整后立即重新计算'}}</text>
+        <text class="drawer-title">{{drawerMode === 'first' ? '设置本月预算' : '修改本月设置'}}</text>
+      </view>
+      <button
+        wx:if="{{drawerMode === 'edit'}}"
+        class="drawer-close"
+        bindtap="closeDrawer"
+        aria-label="关闭设置"
+      >关闭</button>
+    </view>
+
+    <scroll-view class="drawer-scroll" scroll-y="true">
+      <view class="form-field">
+        <text class="field-label">本月收入</text>
+        <view class="form-input {{formErrors.income ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.income}}" data-field="income" bindinput="handleFormInput" placeholder="例如 8000" aria-label="本月收入" />
+        </view>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.income}}">{{formErrors.income}}</text>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">本月固定支出</text>
+        <view class="form-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="本月固定支出" />
+        </view>
+        <text class="field-helper">不包含日常吃饭、交通和购物。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.fixedExpense}}">{{formErrors.fixedExpense}}</text>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">本月想存下的钱</text>
+        <view class="form-input {{formErrors.savingGoal ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.savingGoal}}" data-field="savingGoal" bindinput="handleFormInput" placeholder="例如 1000" aria-label="本月想存下的钱" />
+        </view>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">开始使用前，本月已经花掉的日常消费</text>
+        <view class="form-input {{formErrors.historicalSpentBeforeTracking ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.historicalSpentBeforeTracking}}" data-field="historicalSpentBeforeTracking" bindinput="handleFormInput" placeholder="从本月 1 日到昨天" aria-label="开始使用前已经花掉的日常消费" />
+        </view>
+        <text class="field-helper">不要重复填写固定支出，也不要包含已经在本小程序中记录的消费。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.historicalSpentBeforeTracking}}">{{formErrors.historicalSpentBeforeTracking}}</text>
+      </view>
+
+      <view class="local-only-note">
+        <view class="local-only-note__dot"></view>
+        <text>数据只保存在当前设备中，不会上传。</text>
+      </view>
+
+      <button
+        class="primary-button drawer-save"
+        bindtap="saveBudgetForm"
+        disabled="{{isBudgetSaving}}"
+        loading="{{isBudgetSaving}}"
+      >{{isBudgetSaving ? '保存中…' : '保存并查看结果'}}</button>
+
+      <button
+        wx:if="{{drawerMode === 'edit'}}"
+        class="reset-button"
+        bindtap="resetCurrentMonth"
+      >重置本月数据</button>
+    </scroll-view>
+  </view>
+</view>

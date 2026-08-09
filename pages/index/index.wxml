@@ -253,6 +253,32 @@
             </view>
           </view>
         </view>
+        <view class="ledger-export">
+          <view class="ledger-export__copy">
+            <text class="ledger-export__title">导出全部本地流水</text>
+            <text class="ledger-export__helper">Excel 包含日期、时间、分类、用途和金额。打开后可点右上角操作；PC 端可保存到磁盘。</text>
+          </view>
+          <view class="ledger-export__actions">
+            <button
+              class="ledger-export__button ledger-export__button--primary"
+              bindtap="handleExportLedger"
+              disabled="{{isExporting}}"
+              loading="{{isExporting}}"
+            >{{isExporting ? '正在生成…' : '导出并打开 Excel'}}</button>
+            <button
+              wx:if="{{exportFilePath}}"
+              class="ledger-export__button"
+              bindtap="shareExportedLedger"
+            >直接转发文件</button>
+            <button
+              wx:if="{{exportFilePath && canSaveToDisk}}"
+              class="ledger-export__button"
+              bindtap="saveExportedLedgerToDisk"
+            >保存到电脑</button>
+          </view>
+          <text class="field-error ledger-export__error" aria-role="alert" wx:if="{{exportError}}">{{exportError}}</text>
+          <text class="ledger-export__privacy">只在本机生成，不含启用前汇总、OPENID 或身份信息。</text>
+        </view>
         <text class="receipt-privacy">仅保存在本机 · 当前月纠错会重算额度</text>
       </view>
     </view>
@@ -395,6 +421,7 @@
           <text>¥</text>
           <input type="digit" value="{{form.savingGoal}}" data-field="savingGoal" bindinput="handleFormInput" placeholder="例如 1000" aria-label="本月想存下的钱" />
         </view>
+        <text class="field-helper">与固定支出合计不能超过本月收入。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
       </view>
 
@@ -404,7 +431,7 @@
           <text>¥</text>
           <input type="digit" value="{{form.historicalSpentBeforeTracking}}" data-field="historicalSpentBeforeTracking" bindinput="handleFormInput" placeholder="从本月 1 日到昨天" aria-label="开始使用前已经花掉的日常消费" />
         </view>
-        <text class="field-helper">不要重复填写固定支出，也不要包含已经在本小程序中记录的消费。</text>
+        <text class="field-helper">这里只填启用前日常消费；它与固定支出、已记录消费合计不能超过收入。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.historicalSpentBeforeTracking}}">{{formErrors.historicalSpentBeforeTracking}}</text>
       </view>
 

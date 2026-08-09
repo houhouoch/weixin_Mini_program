@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { deriveBudget } = require('../domain/budget');
+const { deriveBudget, validateBudgetAmounts } = require('../domain/budget');
 const {
   daysInMonth,
   daysRemainingIncludingToday,
@@ -10,6 +10,7 @@ const {
 } = require('../domain/date');
 const { formatCents, parseYuanToCents } = require('../domain/money');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
+const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
 const {
   contrastRatio,
   getThemePresets,
@@ -34,6 +35,77 @@ test('amount parsing is strict and uses cents', () => {
   assert.equal(parseYuanToCents('1..2').ok, false);
   assert.equal(parseYuanToCents('abc').ok, false);
   assert.equal(formatCents(-30000), '-300.00');
+});
+
+test('budget relations reject impossible saving and spending combinations', () => {
+  const impossibleSaving = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 10000000,
+    historicalSpentBeforeTrackingCents: 0
+  });
+  assert.equal(impossibleSaving.valid, false);
+  assert.match(impossibleSaving.errors.savingGoal, /最多还能存 ¥4000\.00/);
+
+  const fixedTooHigh = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 900000,
+    savingGoalCents: 0,
+    historicalSpentBeforeTrackingCents: 0
+  });
+  assert.match(fixedTooHigh.errors.fixedExpense, /不能超过本月收入/);
+
+  const historicalTooHigh = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 350000
+  }, 100000);
+  assert.match(historicalTooHigh.errors.historicalSpentBeforeTracking, /最多可填 ¥3000\.00/);
+
+  const valid = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 250000
+  }, 100000);
+  assert.equal(valid.valid, true);
+});
+
+test('ledger export creates a real xlsx zip with readable local transaction fields', () => {
+  const generatedAt = new Date(2026, 7, 9, 22, 16, 0);
+  const workbook = buildLedgerWorkbook({
+    monthKey: '2026-08',
+    budget: budget({ trackingStartDate: '2026-08-01' }),
+    transactions: [{
+      id: 'current',
+      amountCents: 1500,
+      categoryId: 'food',
+      note: '咖啡',
+      occurredAt: new Date(2026, 7, 9, 8, 30).getTime()
+    }],
+    history: [{
+      monthKey: '2026-07',
+      historicalSpentBeforeTrackingCents: 5000,
+      transactions: [{
+        id: 'archived',
+        amountCents: 400,
+        categoryId: 'transport',
+        note: '地铁',
+        occurredAt: new Date(2026, 6, 31, 18, 5).getTime()
+      }]
+    }]
+  }, generatedAt);
+  const bytes = Buffer.from(workbook.buffer);
+  assert.equal(bytes.readUInt32LE(0), 0x04034B50);
+  assert.equal(bytes.readUInt32LE(bytes.length - 22), 0x06054B50);
+  assert.equal(workbook.fileName, '今天还能花-流水-20260809-2216.xlsx');
+  assert.equal(workbook.recordCount, 2);
+  assert.equal(workbook.totalCents, 1900);
+  assert.ok(bytes.includes(Buffer.from('咖啡')));
+  assert.ok(bytes.includes(Buffer.from('地铁')));
+  assert.ok(bytes.includes(Buffer.from('2026-08-09')));
+  assert.ok(!bytes.includes(Buffer.from('5000.00')));
 });
 
 test('acceptance A01 normal calculation', () => {

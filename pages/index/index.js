@@ -1,4 +1,4 @@
-const { deriveBudget } = require('../../domain/budget');
+const { deriveBudget, validateBudgetAmounts } = require('../../domain/budget');
 const { CATEGORIES, getCategoryLabel } = require('../../domain/categories');
 const {
   daysInMonth,
@@ -18,6 +18,7 @@ const {
 } = require('../../domain/money');
 const budgetStore = require('../../services/budget-store');
 const { trackEvent } = require('../../services/analytics');
+const { exportLedger } = require('../../services/ledger-export');
 const { getSpendingSummary } = require('../../services/spending-summary');
 const themeStore = require('../../services/theme-store');
 const { addTransaction, listTransactions } = require('../../services/transactions');
@@ -144,6 +145,7 @@ Page({
     amountInput: '',
     amountSizeClass: 'amount-normal',
     budget: null,
+    canSaveToDisk: false,
     categories: CATEGORIES,
     dateLabel: '',
     drawerMode: 'first',
@@ -163,8 +165,12 @@ Page({
     historyMaxDateKey: INITIAL_DATE_KEY,
     historyTotalText: '0.00',
     historyTransactions: [],
+    exportError: '',
+    exportFileName: '',
+    exportFilePath: '',
     isEditSaving: false,
     isBudgetSaving: false,
+    isExporting: false,
     isSaving: false,
     noteInput: '',
     readMessage: '',
@@ -195,7 +201,18 @@ Page({
 
   onLoad(options) {
     const fromShare = Boolean(options && options.from === 'share');
-    this.setData({ fromShare, dateLabel: formatChineseDate(new Date()) });
+    let platform = '';
+    try {
+      platform = wx.getSystemInfoSync().platform;
+    } catch (error) {
+      console.warn('无法读取当前平台', error);
+    }
+    this.setData({
+      canSaveToDisk: typeof wx.saveFileToDisk === 'function'
+        && (platform === 'windows' || platform === 'mac'),
+      fromShare,
+      dateLabel: formatChineseDate(new Date())
+    });
     wx.showShareMenu({
       menus: ['shareAppMessage', 'shareTimeline']
     });
@@ -596,6 +613,7 @@ Page({
     const context = await budgetStore.loadBudgetContext(now);
     const transactions = await listTransactions();
     if (context.status === 'ready') await this.renderReady(context.budget, transactions, now);
+    this.setData({ exportError: '', exportFileName: '', exportFilePath: '' });
   },
 
   applyThemeModel(model) {
@@ -703,10 +721,14 @@ Page({
 
   handleFormInput(event) {
     const field = event.currentTarget.dataset.field;
-    this.setData({
-      [`form.${field}`]: event.detail.value,
-      [`formErrors.${field}`]: ''
-    });
+    const errors = Object.assign({}, this.data.formErrors);
+    const dependentFields = field === 'income' || field === 'fixedExpense'
+      ? Object.keys(FIELD_CONFIG)
+      : field === 'historicalSpentBeforeTracking'
+        ? ['income', 'historicalSpentBeforeTracking']
+        : [field];
+    dependentFields.forEach((name) => { errors[name] = ''; });
+    this.setData({ [`form.${field}`]: event.detail.value, formErrors: errors });
   },
 
   validateBudgetForm() {
@@ -725,6 +747,13 @@ Page({
         values[FIELD_CONFIG[field]] = parsed.value;
       }
     });
+    if (valid) {
+      const recordedSpentCents = this.data.transactions
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const relationValidation = validateBudgetAmounts(values, recordedSpentCents);
+      Object.assign(errors, relationValidation.errors);
+      valid = relationValidation.valid;
+    }
     return { errors, valid, values };
   },
 
@@ -782,6 +811,78 @@ Page({
           console.error('重置失败', error);
           wx.showToast({ title: '重置失败，请重试', icon: 'none' });
         }
+      }
+    });
+  },
+
+  async handleExportLedger() {
+    if (this._exportInFlight || this.data.isExporting) return;
+    this._exportInFlight = true;
+    let fileCreated = false;
+    this.setData({ isExporting: true, exportError: '' });
+    try {
+      const exported = await exportLedger(new Date());
+      fileCreated = true;
+      this.setData({
+        exportFileName: exported.fileName,
+        exportFilePath: exported.filePath
+      });
+      trackEvent('ledger_export', { outcome: 'created' });
+      await this.openExportedLedger(exported.filePath);
+    } catch (error) {
+      console.error('导出流水失败', error);
+      this.setData({
+        exportError: fileCreated
+          ? 'Excel 已生成，但暂时无法打开；可点“直接转发文件”或重试。'
+          : error.message || '导出失败，请重试'
+      });
+      trackEvent('ledger_export', { outcome: fileCreated ? 'open_failed' : 'failed' });
+    } finally {
+      this._exportInFlight = false;
+      this.setData({ isExporting: false });
+    }
+  },
+
+  openExportedLedger(filePath) {
+    const target = filePath || this.data.exportFilePath;
+    if (!target) return Promise.reject(new Error('请先导出 Excel'));
+    return new Promise((resolve, reject) => {
+      wx.openDocument({
+        filePath: target,
+        fileType: 'xlsx',
+        showMenu: true,
+        success: resolve,
+        fail: (error) => reject(new Error(error && error.errMsg
+          ? error.errMsg
+          : '打开 Excel 失败'))
+      });
+    });
+  },
+
+  shareExportedLedger() {
+    if (!this.data.exportFilePath) return;
+    if (typeof wx.shareFileMessage !== 'function') {
+      wx.showToast({ title: '当前微信版本不支持直接转发文件', icon: 'none' });
+      return;
+    }
+    wx.shareFileMessage({
+      filePath: this.data.exportFilePath,
+      fileName: this.data.exportFileName,
+      fail: (error) => {
+        console.error('转发 Excel 失败', error);
+        wx.showToast({ title: '转发失败，请重试', icon: 'none' });
+      }
+    });
+  },
+
+  saveExportedLedgerToDisk() {
+    if (!this.data.exportFilePath || !this.data.canSaveToDisk) return;
+    wx.saveFileToDisk({
+      filePath: this.data.exportFilePath,
+      success: () => wx.showToast({ title: '已保存到电脑', icon: 'success' }),
+      fail: (error) => {
+        console.error('保存 Excel 失败', error);
+        wx.showToast({ title: '保存失败，请重试', icon: 'none' });
       }
     });
   },

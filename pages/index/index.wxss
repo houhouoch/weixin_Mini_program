@@ -906,6 +906,76 @@
   font-size: 21rpx;
 }
 
+.ledger-export {
+  margin-top: 28rpx;
+  padding: 28rpx;
+  border: 2rpx solid var(--theme-border, #E6DBC0);
+  background: var(--theme-surface, #FFF9EC);
+}
+
+.ledger-export__copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.ledger-export__title {
+  color: var(--theme-text, #123F35);
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.ledger-export__helper,
+.ledger-export__privacy {
+  margin-top: 10rpx;
+  color: var(--theme-muted, #7C837A);
+  font-size: 21rpx;
+  line-height: 1.6;
+}
+
+.ledger-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 22rpx;
+}
+
+.ledger-export__button {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88rpx;
+  margin: 0;
+  padding: 0 22rpx;
+  border: 2rpx solid var(--theme-primary, #123F35);
+  border-radius: 20rpx;
+  background: transparent;
+  color: var(--theme-primary, #123F35);
+  font-size: 22rpx;
+  font-weight: 750;
+  line-height: 84rpx;
+}
+
+.ledger-export__button + .ledger-export__button {
+  margin-top: 14rpx;
+}
+
+.ledger-export__button--primary {
+  background: var(--theme-primary, #123F35);
+  color: var(--theme-on-primary, #FFF9EC);
+}
+
+.ledger-export__button[disabled] {
+  opacity: 0.58;
+}
+
+.ledger-export__error {
+  display: block;
+  margin-top: 14rpx;
+}
+
+.ledger-export__privacy {
+  display: block;
+  margin-top: 16rpx;
+}
+
 .share-footer {
   box-sizing: border-box;
   margin-top: 32rpx;

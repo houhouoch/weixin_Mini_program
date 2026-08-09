@@ -14,7 +14,10 @@ const required = [
   'pages/index/index.wxml',
   'pages/index/index.wxss',
   'domain/spending-summary.js',
+  'domain/ledger-workbook.js',
   'domain/theme.js',
+  'infrastructure/file-system.js',
+  'services/ledger-export.js',
   'services/spending-summary.js',
   'services/theme-store.js',
   heroPath,
@@ -82,6 +85,10 @@ check(pageJs.includes('saveThemeSettings'), '页面支持保存安全主题设�
 check(pageJs.includes('toggleSection'), '页面支持独立折叠非核心模块');
 check(pageJs.includes('refreshHistoryDetail'), '页面支持按日期读取历史明细');
 check(pageJs.includes('saveEditedTransaction'), '页面支持修改错误交易');
+check(pageJs.includes('handleExportLedger'), '页面支持导出 Excel 流水');
+check(pageJs.includes('showMenu: true'), 'Excel 预览显示右上角文档菜单');
+check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel 文件');
+check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
 
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
 check(wxml.includes('open-type="share"'), '好友分享使用 open-type="share"');
@@ -97,6 +104,8 @@ check(
 check(wxml.includes('mode="date"'), '历史回顾使用原生日期选择器');
 check(wxml.includes('修改消费明细'), '页面提供交易修改抽屉');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
+check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');
+check(wxml.includes('不含启用前汇总、OPENID 或身份信息'), '导出区明示隐私范围');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 3'), '本地数据使用 schema 3');
@@ -120,6 +129,11 @@ check(transactionSource.includes('交易日期只能在原月份内修改'), '�
 
 const analyticsSource = fs.readFileSync(path.join(root, 'services/analytics.js'), 'utf8');
 check(analyticsSource.includes('FORBIDDEN_KEY'), '埋点入口过滤金额和身份字段');
+
+const workbookSource = fs.readFileSync(path.join(root, 'domain/ledger-workbook.js'), 'utf8');
+check(workbookSource.includes('0x04034B50'), 'XLSX 生成器写入 ZIP 本地文件头');
+check(workbookSource.includes('0x06054B50'), 'XLSX 生成器写入 ZIP 中心目录结尾');
+check(!/openid|unionid|avatar|nickName/i.test(workbookSource), 'Excel 生成器不包含身份字段');
 
 if (failures.length) {
   console.error(`\n${failures.length} 项检查失败：`);

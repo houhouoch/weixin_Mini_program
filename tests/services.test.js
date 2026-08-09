@@ -47,6 +47,40 @@ test('empty, save and persisted load lifecycle', async () => {
   assert.equal(loaded.budget.incomeCents, 800000);
 });
 
+test('budget store rejects impossible relations and keeps the last valid state', async () => {
+  const now = new Date(2026, 7, 9, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+
+  await assert.rejects(budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 10000000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now), /最多还能存 ¥4000\.00/);
+  assert.equal((await budgetStore.loadBudgetContext(now)).budget.savingGoalCents, 100000);
+
+  await addTransaction({
+    action: 'create',
+    commandId: 'budget-relation-record',
+    amountCents: 100000,
+    categoryId: 'other',
+    note: '已花',
+    occurredAt: now.getTime()
+  });
+  await assert.rejects(budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 750000,
+    savingGoalCents: 0,
+    historicalSpentBeforeTrackingCents: 0
+  }, now), /收入至少需要 ¥8500\.00/);
+  assert.equal((await budgetStore.loadBudgetContext(now)).budget.fixedExpenseCents, 400000);
+});
+
 test('transaction commands are idempotent and delete through addTransaction', async () => {
   const now = new Date(2026, 3, 20, 10);
   await budgetStore.saveBudget({

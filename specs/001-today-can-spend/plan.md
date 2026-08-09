@@ -8,11 +8,14 @@ pages/index (展示与交互)
   -> services/transactions (仅 addTransaction/listTransactions，Promise)
   -> services/spending-summary (日/月/年本地聚合，Promise)
   -> services/theme-store (预设与安全微调，Promise)
+  -> services/ledger-export (本地 XLSX 生成与文件写入，Promise)
   -> services/analytics (trackEvent 隐私过滤)
   -> domain/categories (分类白名单与展示名)
-  -> domain/budget (纯计算)
+  -> domain/budget (纯计算与关联校验)
+  -> domain/ledger-workbook (纯 XLSX/ZIP 生成)
   -> domain/date (纯日期)
   -> infrastructure/storage (唯一微信缓存边界)
+  -> infrastructure/file-system (小程序用户文件边界)
 ```
 
 交易修改与删除使用 `addTransaction({ action: 'update' | 'delete', transactionId, commandId, ... })`，从而满足交易模块仅暴露两个 API，同时支持当前月和归档纠错。`listTransactions({ dateKey })` 在同一读取 API 内提供按日明细。防重复由页面锁和数据层 `commandId` 幂等共同保证。
@@ -33,6 +36,9 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 - `services/transactions.js`：添加、修改、删除命令与当前/归档按日列表。
 - `services/spending-summary.js`：按日/月/年聚合真实本地记录。
 - `services/theme-store.js`：主题预设、安全微调和默认恢复。
+- `domain/ledger-workbook.js`：将当前与归档逐笔记录生成标准 XLSX。
+- `infrastructure/file-system.js`：Promise 化小程序用户目录写入。
+- `services/ledger-export.js`：读取本地状态并交付 Excel 文件。
 - `services/analytics.js`：统一隐私安全事件。
 - `tests/*.test.js`：Node 内建测试。
 - `scripts/check-structure.js`：页面数、缓存边界、分享和文件结构检查。
@@ -62,6 +68,14 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 3. 将回看、记账、记录与历史改为独立折叠区；
 4. 新增日期明细和交易编辑底部抽屉；
 5. 自动化、静态检查与开发者工具交互验证。
+
+## V1.4 实施顺序
+
+1. 在预算领域层实现跨字段关联校验，页面和服务共用；
+2. 汇总当前月与归档月的真实逐笔记录；
+3. 用纯 JavaScript 生成 XLSX XML 与无压缩 ZIP/CRC 结构；
+4. 写入小程序用户目录，通过 `wx.openDocument` 预览、通过 `wx.shareFileMessage` 转发；
+5. 完成结构、CRC、字段隐私和回归验证。
 
 ## 验证策略
 

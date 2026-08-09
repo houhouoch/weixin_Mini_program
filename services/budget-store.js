@@ -1,4 +1,5 @@
 const { toDateKey, toMonthKey } = require('../domain/date');
+const { validateBudgetAmounts } = require('../domain/budget');
 const {
   archiveCurrentState,
   createState,
@@ -38,6 +39,14 @@ async function saveBudget(values, now) {
   const current = now || new Date();
   const monthKey = toMonthKey(current);
   const result = await readState();
+  const recordedSpentCents = result.state && result.state.monthKey === monthKey
+    ? result.state.transactions.reduce((sum, item) => sum + item.amountCents, 0)
+    : 0;
+  const validation = validateBudgetAmounts(values, recordedSpentCents);
+  if (!validation.valid) {
+    const message = Object.values(validation.errors).find(Boolean);
+    throw new Error(message || '预算设置无效');
+  }
   const budget = makeBudget(values, current);
   let state;
 

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { setStorageAdapterForTests } = require('../infrastructure/storage');
+const { readZipTextEntries } = require('../infrastructure/file-system');
 const budgetStore = require('../services/budget-store');
 const { getSpendingSummary } = require('../services/spending-summary');
 const themeStore = require('../services/theme-store');
@@ -187,6 +188,46 @@ test('wechat bill import skips future and records older than 36 months', async (
   assert.equal(result.importedCount, 0);
   assert.equal(result.skippedCount, 2);
   assert.equal((await listTransactions({ all: true })).length, 0);
+});
+
+test('wechat XLSX file boundary requests text entries and decodes ArrayBuffer results', async () => {
+  const originalWx = global.wx;
+  const sheetXml = '<?xml version="1.0"?><worksheet><sheetData></sheetData></worksheet>';
+  const sharedXml = '<?xml version="1.0"?><sst><si><t>交易时间</t></si></sst>';
+  global.wx = {
+    getFileSystemManager() {
+      return {
+        readZipEntry(options) {
+          assert.deepEqual(options.entries, [{
+            path: 'xl/worksheets/sheet1.xml',
+            encoding: 'utf-8'
+          }, {
+            path: 'xl/sharedStrings.xml',
+            encoding: 'utf-8'
+          }]);
+          options.success({
+            entries: {
+              '/xl/worksheets/sheet1.xml': {
+                data: new TextEncoder().encode(sheetXml).buffer,
+                errMsg: 'readZipEntry:ok'
+              },
+              'xl\\sharedStrings.xml': {
+                data: new TextEncoder().encode(sharedXml).buffer,
+                errMsg: 'readZipEntry:ok'
+              }
+            }
+          });
+        }
+      };
+    }
+  };
+  try {
+    const entries = await readZipTextEntries('wxfile://bill.xlsx');
+    assert.equal(entries['xl/worksheets/sheet1.xml'].data, sheetXml);
+    assert.equal(entries['xl/sharedStrings.xml'].data, sharedXml);
+  } finally {
+    global.wx = originalWx;
+  }
 });
 
 test('current transaction can be corrected and changes the daily detail', async () => {

@@ -151,6 +151,8 @@ check(!/openid|unionid|avatar|nickName/i.test(billParserSource), '微信账单�
 
 const fileSystemSource = fs.readFileSync(path.join(root, 'infrastructure/file-system.js'), 'utf8');
 check(fileSystemSource.includes('readZipEntry'), 'XLSX 通过微信文件系统读取压缩条目');
+check(fileSystemSource.includes("encoding: 'utf-8'"), 'XLSX 条目分别指定 UTF-8 编码');
+check(fileSystemSource.includes('decodeUtf8Data'), 'XLSX 兼容微信返回 ArrayBuffer');
 
 if (failures.length) {
   console.error(`\n${failures.length} 项检查失败：`);

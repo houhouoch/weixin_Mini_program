@@ -43,6 +43,62 @@ function readTextFile(filePath) {
   });
 }
 
+function decodeUtf8Data(data) {
+  if (typeof data === 'string') return data.replace(/^\uFEFF/, '');
+  let bytes;
+  if (data instanceof ArrayBuffer) {
+    bytes = new Uint8Array(data);
+  } else if (ArrayBuffer.isView && ArrayBuffer.isView(data)) {
+    bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  } else {
+    return '';
+  }
+  let output = '';
+  for (let index = 0; index < bytes.length;) {
+    const first = bytes[index];
+    let codePoint;
+    let length;
+    if (first < 0x80) {
+      codePoint = first;
+      length = 1;
+    } else if ((first & 0xE0) === 0xC0 && index + 1 < bytes.length) {
+      codePoint = ((first & 0x1F) << 6) | (bytes[index + 1] & 0x3F);
+      length = 2;
+    } else if ((first & 0xF0) === 0xE0 && index + 2 < bytes.length) {
+      codePoint = ((first & 0x0F) << 12)
+        | ((bytes[index + 1] & 0x3F) << 6)
+        | (bytes[index + 2] & 0x3F);
+      length = 3;
+    } else if ((first & 0xF8) === 0xF0 && index + 3 < bytes.length) {
+      codePoint = ((first & 0x07) << 18)
+        | ((bytes[index + 1] & 0x3F) << 12)
+        | ((bytes[index + 2] & 0x3F) << 6)
+        | (bytes[index + 3] & 0x3F);
+      length = 4;
+    } else {
+      codePoint = 0xFFFD;
+      length = 1;
+    }
+    if (codePoint > 0xFFFF) {
+      const offset = codePoint - 0x10000;
+      output += String.fromCharCode(0xD800 + (offset >> 10), 0xDC00 + (offset & 0x3FF));
+    } else {
+      output += String.fromCharCode(codePoint);
+    }
+    index += length;
+  }
+  return output.replace(/^\uFEFF/, '');
+}
+
+function normalizeZipEntries(entries) {
+  return Object.keys(entries || {}).reduce((normalized, path) => {
+    const key = String(path).replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+    const item = entries[path] || {};
+    normalized[key] = Object.assign({}, item, { data: decodeUtf8Data(item.data) });
+    return normalized;
+  }, {});
+}
+
 function readZipTextEntries(filePath) {
   return new Promise((resolve, reject) => {
     let manager;
@@ -58,9 +114,14 @@ function readZipTextEntries(filePath) {
     }
     manager.readZipEntry({
       filePath,
-      entries: 'all',
-      encoding: 'utf8',
-      success: (result) => resolve(result.entries || {}),
+      entries: [{
+        path: 'xl/worksheets/sheet1.xml',
+        encoding: 'utf-8'
+      }, {
+        path: 'xl/sharedStrings.xml',
+        encoding: 'utf-8'
+      }],
+      success: (result) => resolve(normalizeZipEntries(result.entries || {})),
       fail: (error) => reject(new Error(error && error.errMsg
         ? error.errMsg
         : 'Excel 账单解析失败'))
@@ -68,4 +129,10 @@ function readZipTextEntries(filePath) {
   });
 }
 
-module.exports = { readTextFile, readZipTextEntries, writeUserFile };
+module.exports = {
+  decodeUtf8Data,
+  normalizeZipEntries,
+  readTextFile,
+  readZipTextEntries,
+  writeUserFile
+};

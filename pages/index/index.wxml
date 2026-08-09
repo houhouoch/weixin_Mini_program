@@ -265,7 +265,7 @@
             disabled="{{billImportLoading || isBillImportSaving}}"
             loading="{{billImportLoading}}"
           >{{billImportLoading ? '正在读取…' : (billImportPreview ? '重新选择账单' : '从微信会话选择文件')}}</button>
-          <text class="field-error bill-import__error" aria-role="alert" wx:if="{{billImportError}}">{{billImportError}} 请确认选择的是解压后的官方账单文件。</text>
+          <text class="field-error bill-import__error" aria-role="alert" wx:if="{{billImportError}}">{{billImportError}}</text>
 
           <view class="bill-import__preview" wx:if="{{billImportPreview}}" aria-role="status">
             <view class="bill-import__file-row">

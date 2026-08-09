@@ -11,20 +11,31 @@ function extensionOf(name) {
 }
 
 function entryData(entries, path) {
-  const item = entries[path];
-  if (!item || item.errMsg && !/:ok$/.test(item.errMsg)) return '';
+  const normalizedPath = String(path).replace(/^\/+/, '').toLowerCase();
+  const matchedPath = Object.keys(entries || {}).find((entryPath) => String(entryPath)
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .toLowerCase() === normalizedPath);
+  const item = matchedPath ? entries[matchedPath] : null;
+  if (!item || item.errMsg && !/ok$/i.test(item.errMsg)) return '';
   return typeof item.data === 'string' ? item.data : '';
 }
 
 function parseXlsxEntries(entries, now) {
   const paths = Object.keys(entries || {});
   const worksheetPath = paths
-    .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(path))
+    .filter((path) => /^\/?xl[\\/]worksheets[\\/]sheet\d+\.xml$/i.test(path))
     .sort()[0];
   if (!worksheetPath) throw new Error('Excel 中没有找到可读取的账单工作表');
+  const sheetXml = entryData(entries, worksheetPath);
+  if (!sheetXml) throw new Error('没有读取到 Excel 工作表内容，请升级微信后重试');
+  const sharedStringsXml = entryData(entries, 'xl/sharedStrings.xml');
+  if (/\bt="s"/.test(sheetXml) && !sharedStringsXml) {
+    throw new Error('没有读取到 Excel 文本索引，请升级微信后重试');
+  }
   return parseWechatBillXlsx(
-    entryData(entries, worksheetPath),
-    entryData(entries, 'xl/sharedStrings.xml'),
+    sheetXml,
+    sharedStringsXml,
     now
   );
 }

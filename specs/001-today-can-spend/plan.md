@@ -6,6 +6,8 @@
 pages/index (展示与交互)
   -> services/budget-store (预算与月份生命周期，Promise)
   -> services/transactions (仅 addTransaction/listTransactions，Promise)
+  -> services/spending-summary (日/月/年本地聚合，Promise)
+  -> services/theme-store (预设与安全微调，Promise)
   -> services/analytics (trackEvent 隐私过滤)
   -> domain/categories (分类白名单与展示名)
   -> domain/budget (纯计算)
@@ -14,6 +16,8 @@ pages/index (展示与交互)
 ```
 
 交易删除使用 `addTransaction({ action: 'delete', transactionId, commandId })`，从而满足交易模块仅暴露两个 API，同时保留删除能力。防重复由页面锁和数据层 `commandId` 幂等共同保证。
+
+V1.2 设计阶段保持现有代码不变。功能实现时先增加历史归档和聚合纯函数，再接入消费回看；主题由有限 token 派生，不允许页面保存任意 CSS/WXSS 色值。年度视图在 schema 3 归档完成前只能显示数据范围说明。
 
 ## 文件计划
 
@@ -27,6 +31,8 @@ pages/index (展示与交互)
 - `infrastructure/storage.js`：Promise 化微信缓存。
 - `services/budget-store.js`：设置、读取、重置、跨月。
 - `services/transactions.js`：添加、删除命令、列表。
+- `services/spending-summary.js`：按日/月/年聚合真实本地记录。
+- `services/theme-store.js`：主题预设、安全微调和默认恢复。
 - `services/analytics.js`：统一隐私安全事件。
 - `tests/*.test.js`：Node 内建测试。
 - `scripts/check-structure.js`：页面数、缓存边界、分享和文件结构检查。
@@ -41,9 +47,18 @@ pages/index (展示与交互)
 5. 分享与埋点；
 6. 自动化检查、Figma 预览和开发者工具验证说明。
 
+## V1.2 实施顺序
+
+1. 语义状态文案和样式映射；
+2. 日/月聚合纯函数与消费回看模块；
+3. schema 3 历史归档迁移和真实年视图；
+4. 主题预设、token 派生和安全微调；
+5. 开发者工具与真机的状态、图表、主题对比度验证。
+
 ## 验证策略
 
 - `node --test tests/*.test.js`：公式、边界、日期、服务幂等、损坏存储。
 - `node scripts/check-structure.js`：单页、无 tabBar、页面无缓存 API、分享入口和所需文件。
 - Figma 截图：375px 视觉、插画、表单和票据列表检查。
+- V1.2 Figma 截图：正常、额度将尽、今日超额、消费回看展开和主题抽屉五种独立候选检查。
 - 微信开发者工具：导入、编译、分享生命周期、键盘、系统弹窗、安全区；若本机不可自动操作则标记待验证。

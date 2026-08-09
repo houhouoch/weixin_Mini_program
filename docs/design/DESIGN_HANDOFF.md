@@ -13,6 +13,20 @@
 - UI 规范：\`design-system/default/MASTER.md\`
 - 首页覆盖规则：\`design-system/default/pages/home.md\`
 
+## V1.2 概念稿
+
+原 V2 节点 `7:3` 保持不变。新方案放在独立 Figma Section `17:2` 中，五张稿可分别评审，不会覆盖当前设计：
+
+| 方案 | Figma 节点 | 本地快照 | 设计重点 |
+|---|---|---|---|
+| 正常 | [17:3](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-3) | `docs/design/figma-v1.2-normal.png` | 作为对照基线，完整保留当前 V2 |
+| 额度将尽 | [17:87](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-87) | `docs/design/figma-v1.2-running-low.png` | 琥珀状态、剩余金额、13% 标签和接近满格进度 |
+| 今日超额 | [17:171](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-171) | `docs/design/figma-v1.2-today-overspent.png` | 明确显示“已超 ¥20.00”，标题、文案、进度和标签共同转为危险状态 |
+| 消费回看展开 | [17:255](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-255) | `docs/design/figma-v1.2-spending-review.png` | 单页日/月/年切换、三日摘要、7 天趋势和最高分类 |
+| 主题工作室 | [17:339](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-339) | `docs/design/figma-v1.2-theme-studio.png` | 6 套预设、安全微调、语义警示色锁定 |
+
+整组对比快照为 `docs/design/figma-v1.2-concepts.png`。这五张是设计确认稿，尚未同步到小程序运行代码。
+
 ## 图片来源
 
 主视觉由 GPT 图像生成能力根据本产品提示词原创生成，内容为咖啡、交通、购物、收据和硬币组成的日常消费路径。原图先上传到 Figma 用于裁切、排版和叠加动态金额；Figma 本身不负责生成这张图片。仓库运行资产压缩为 1024 × 683、约 540 KB 的 PNG，视觉内容不变，避免单张原图挤占微信小程序主包。
@@ -35,5 +49,6 @@
 
 ## 已验证与待验证
 
-- 已验证：原创图片已本地化；Figma 节点完整；375px 快照无横向裁切；分类、用途、小票列表和分享隐私文案均在设计稿中可见。
+- 已验证：原创图片已本地化；原 V2 未被覆盖；五张 V1.2 Figma 节点均可独立打开；375px 快照无横向裁切；额度将尽和今日超额没有文字/插画覆盖；消费回看与主题抽屉在单页范围内可读。
+- 规格已确认、代码待实现：语义状态转换、日/月聚合、schema 3 历史归档、年视图、主题预设与安全微调。
 - 待开发者工具验证：微信导航栏、安全区、系统字体差异、数字键盘、用途输入、保存状态、删除弹窗、好友分享面板和朋友圈入口。

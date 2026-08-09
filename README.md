@@ -1,6 +1,6 @@
 # 今天还能花｜微信小程序 MVP
 
-一个只用本地数据回答“今天还能安全花多少钱”的原生微信小程序。项目无登录、无后端、无云开发、无第三方 UI 库，首页完成预算关联校验、查看结果、折叠内容、记一笔、按日期回看、修改/删除明细、跨天/跨月、日/月/年消费回看、Excel 流水导出、主题定制和隐私安全分享的核心闭环。
+一个只用本地数据回答“今天还能安全花多少钱”的原生微信小程序。项目无登录、无后端、无云开发、无第三方 UI 库，首页完成预算关联校验、查看结果、折叠内容、手动记账、微信支付账单导入、按日期回看、修改/删除明细、跨天/跨月、日/月/年消费回看、Excel 流水导出、主题定制和隐私安全分享的核心闭环。
 
 ## 导入微信开发者工具
 
@@ -19,13 +19,14 @@
 ```text
 app.*                         小程序入口与全局样式
 pages/index/                  唯一主页面
-domain/                       金额、日期、分类、预算、回看与主题纯逻辑
+domain/                       金额、日期、预算、回看、账单解析与主题纯逻辑
 infrastructure/storage.js     唯一微信缓存边界
-infrastructure/file-system.js 小程序用户文件写入边界
+infrastructure/file-system.js 小程序用户文件读写与 XLSX 条目读取边界
 services/budget-store.js      设置、重置、跨月与历史归档
 services/transactions.js      Promise 交易 API（仅 add/list）
 services/spending-summary.js  日/月/年真实本地记录聚合
 services/ledger-export.js      本地 XLSX 流水生成与交付
+services/wechat-bill-import.js 微信账单本地解析、预览与已有流水去重
 services/theme-store.js       主题预设与安全微调持久化
 services/analytics.js         隐私过滤后的统一 trackEvent
 tests/                        Node 自动化测试
@@ -53,7 +54,7 @@ docs/design/                  Figma 交付、原创图片来源与页面快照
 - `processedCommandIds[]`：最近交易命令 ID，用于幂等防重复。
 - `history[]`：最多保留 36 个已结束月份的启用前汇总与真实逐笔记录，用于年度回看。
 
-页面不会直接调用缓存 API。交易模块只公开返回 Promise 的 `addTransaction(command)` 与 `listTransactions(options)`：创建、修改和删除分别通过 `addTransaction({ action: 'create' | 'update' | 'delete' })` 完成，`listTransactions({ dateKey: 'YYYY-MM-DD' })` 可读取当前月或归档中的指定日期真实明细。
+页面不会直接调用缓存 API。交易模块只公开返回 Promise 的 `addTransaction(command)` 与 `listTransactions(options)`：创建、修改、删除和账单导入分别通过 `addTransaction({ action: 'create' | 'update' | 'delete' | 'import' })` 完成；`listTransactions({ dateKey: 'YYYY-MM-DD' })` 可读取当前月或归档中的指定日期真实明细，`listTransactions({ all: true })` 仅供本地导入预览去重。
 
 固定分类为餐饮、交通、购物、日用、娱乐、医疗、人情、其他；用途最多 20 个字符，只保存在本机，不进入埋点或分享参数。旧版 `schemaVersion: 1/2` 数据会原地无损迁移到版本 3；版本 1 的旧记录保留金额和时间，并归入“其他”、用途留空。存储 key 保持不变，避免升级时丢失本机旧数据。
 
@@ -81,9 +82,15 @@ docs/design/                  Figma 交付、原创图片来源与页面快照
 
 启用前已花是没有日期和分类的汇总，不会被伪造成逐笔流水。文件只写入小程序用户目录，不上传，不含 OPENID 或身份信息。`wx.openDocument` 文档菜单、`wx.shareFileMessage` 和 PC 端保存需在微信开发者工具/真机验证。
 
-## 多平台账单路线图
+## 导入微信支付账单
 
-当前版本不伪称可以通过商户对账 API 读取普通用户的个人钱包。下一阶段计划是“用户主动导出微信/支付宝/银行账单 → 从会话选择文件 → 本地解析、预览、去重 → 确认导入”。直接银行同步需逐行合作、授权、合规和服务端，不在当前纯本地 MVP 内。
+1. 在微信支付中申请个人账单并接收邮件；
+2. 在电脑或手机上使用邮件中的密码解压账单压缩包；
+3. 把解压出的 `.xlsx` 或 `.csv` 发到任意微信会话；
+4. 小程序展开“记录与历史”，点“从微信会话选择文件”；
+5. 核对日期范围、新增、重复、跳过和新增支出合计，再点确认导入。
+
+账单只在本机解析，不上传。当前版本只导入最近 36 个月至当前时刻的有效支出；收入、不计收支、退款、撤销、关闭、无效行和超期行会跳过。交易单号只生成不含原文的本地去重指纹，原文不保存。导入后的流水可按日期修改、删除，并在导出 Excel 中标记为“微信支付导入”。加密 ZIP 不能直接选择，支付宝和银行格式仍是后续路线图。
 
 ## 分享与隐私
 
@@ -102,6 +109,6 @@ node --test tests/*.test.js
 node scripts/check-structure.js
 ```
 
-自动化覆盖金额解析、预算关联约束、核心计算/日期/存储场景、分类与用途校验、schema 1/2 迁移、交易幂等、跨月归档、历史纠错、跨日/跨月/跨年导入样本、日/月/年聚合、XLSX ZIP/CRC 完整性、主题持久化与对比度。微信分享面板、文件预览/转发/保存、系统弹窗、数字键盘、用途输入、安全区、CSS 变量兼容性以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。
+自动化覆盖金额解析、预算关联约束、核心计算/日期/存储场景、分类与用途校验、schema 1/2 迁移、交易幂等、跨月归档、历史纠错、日/月/年聚合、微信 CSV/XLSX 账单解析、过滤、去重、跨月导入、XLSX 导出来源与 ZIP/CRC 完整性、主题持久化与对比度。微信分享面板、真实官方脱敏账单、文件选择/预览/转发/保存、系统弹窗、数字键盘、安全区、CSS 变量兼容性以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。
 
-开发版本 `1.3.0` 已通过微信开发者工具 CLI 上传，上传包为 251221 字节（245.3 KB）。
+开发版本 `1.5.0` 已于 2026-08-09 通过微信开发者工具 CLI 上传到 AppID `wxd7449a88684708f3`，上传包为 288553 字节（281.8 KB）。真实微信官方脱敏账单选择与导入仍需真机验证。

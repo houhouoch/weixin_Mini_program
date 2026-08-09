@@ -4,6 +4,7 @@ const { parseLocalDateKey, toDateKey, toMonthKey } = require('../domain/date');
 const { readState, saveState } = require('./state-store');
 
 const NOTE_MAX_LENGTH = 20;
+const IMPORT_MAX_RECORDS = 5000;
 
 let mutationQueue = Promise.resolve();
 
@@ -44,6 +45,20 @@ function assertCommand(command) {
       throw new Error('待修改交易无效');
     }
     if (command.action === 'update') assertTransactionFields(command);
+    return;
+  }
+  if (command.action === 'import') {
+    if (command.source !== 'wechat'
+      || !Array.isArray(command.transactions)
+      || command.transactions.length > IMPORT_MAX_RECORDS) {
+      throw new Error('微信账单导入命令无效');
+    }
+    command.transactions.forEach((transaction) => {
+      assertTransactionFields(transaction);
+      if (typeof transaction.id !== 'string' || !/^wechat-[a-z0-9-]+$/.test(transaction.id)) {
+        throw new Error('微信账单记录标识无效');
+      }
+    });
     return;
   }
   throw new Error('未知交易命令');
@@ -113,10 +128,81 @@ function deleteLocatedTransaction(state, location) {
   return Object.assign({}, state, { history });
 }
 
+function monthDistance(currentMonthKey, monthKey) {
+  const current = /^(\d{4})-(\d{2})$/.exec(currentMonthKey);
+  const target = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!current || !target) return Number.POSITIVE_INFINITY;
+  return (Number(current[1]) - Number(target[1])) * 12
+    + Number(current[2]) - Number(target[2]);
+}
+
+function importTransactions(state, records) {
+  const existingIds = new Set(
+    state.history.reduce(
+      (ids, archive) => ids.concat(archive.transactions.map((item) => item.id)),
+      state.transactions.map((item) => item.id)
+    )
+  );
+  const current = state.transactions.slice();
+  const historyByMonth = new Map(state.history.map((archive) => [
+    archive.monthKey,
+    Object.assign({}, archive, { transactions: archive.transactions.slice() })
+  ]));
+  let duplicateCount = 0;
+  let importedCount = 0;
+  let skippedCount = 0;
+
+  records.forEach((record) => {
+    if (existingIds.has(record.id)) {
+      duplicateCount += 1;
+      return;
+    }
+    const monthKey = toMonthKey(record.occurredAt);
+    const distance = monthDistance(state.monthKey, monthKey);
+    if (distance < 0 || distance > 36) {
+      skippedCount += 1;
+      return;
+    }
+    const transaction = {
+      id: record.id,
+      amountCents: record.amountCents,
+      categoryId: record.categoryId,
+      note: (record.note || '').trim(),
+      occurredAt: record.occurredAt
+    };
+    if (distance === 0) {
+      current.push(transaction);
+    } else {
+      const archive = historyByMonth.get(monthKey) || {
+        monthKey,
+        historicalSpentBeforeTrackingCents: 0,
+        transactions: []
+      };
+      archive.transactions.push(transaction);
+      historyByMonth.set(monthKey, archive);
+    }
+    existingIds.add(record.id);
+    importedCount += 1;
+  });
+
+  return {
+    duplicateCount,
+    importedCount,
+    skippedCount,
+    state: Object.assign({}, state, {
+      transactions: current,
+      history: Array.from(historyByMonth.values())
+        .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+        .slice(-36)
+    })
+  };
+}
+
 async function executeCommand(command) {
   assertCommand(command);
   const result = await readState();
-  if (!result.state || (command.action === 'create' && !result.state.budget)) {
+  if (!result.state
+    || ((command.action === 'create' || command.action === 'import') && !result.state.budget)) {
     throw new Error('请先完成本月设置');
   }
   let state = result.state;
@@ -124,10 +210,14 @@ async function executeCommand(command) {
     return { duplicate: true, transactions: sortedTransactions(state.transactions) };
   }
 
+  let importResult = null;
   if (command.action === 'create') {
     state = Object.assign({}, state, {
       transactions: state.transactions.concat(transactionFromCommand(command))
     });
+  } else if (command.action === 'import') {
+    importResult = importTransactions(state, command.transactions);
+    state = importResult.state;
   } else {
     const location = locateTransaction(state, command.transactionId);
     if (!location) throw new Error('没有找到这笔记录');
@@ -141,7 +231,14 @@ async function executeCommand(command) {
     .slice(-100);
   state = Object.assign({}, state, { processedCommandIds });
   await saveState(state);
-  return { duplicate: false, transactions: sortedTransactions(state.transactions) };
+  return Object.assign({
+    duplicate: false,
+    transactions: sortedTransactions(state.transactions)
+  }, importResult ? {
+    duplicateCount: importResult.duplicateCount,
+    importedCount: importResult.importedCount,
+    skippedCount: importResult.skippedCount
+  } : {});
 }
 
 function addTransaction(command) {
@@ -153,16 +250,17 @@ function addTransaction(command) {
 async function listTransactions(options) {
   const result = await readState();
   if (!result.state) return [];
+  const allTransactions = result.state.history.reduce(
+    (all, item) => all.concat(item.transactions),
+    result.state.transactions.slice()
+  );
+  if (options && options.all === true) return sortedTransactions(allTransactions);
   if (!options || options.dateKey === undefined) {
     return sortedTransactions(result.state.transactions);
   }
   if (!parseLocalDateKey(options.dateKey)) {
     throw new Error('历史日期无效');
   }
-  const allTransactions = result.state.history.reduce(
-    (all, item) => all.concat(item.transactions),
-    result.state.transactions.slice()
-  );
   return sortedTransactions(
     allTransactions.filter((item) => toDateKey(item.occurredAt) === options.dateKey)
   );

@@ -11,6 +11,7 @@ const {
 const { formatCents, parseYuanToCents } = require('../domain/money');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
+const { parseWechatBillCsv, parseWechatBillXlsx } = require('../domain/wechat-bill');
 const {
   contrastRatio,
   getThemePresets,
@@ -88,7 +89,7 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
       monthKey: '2026-07',
       historicalSpentBeforeTrackingCents: 5000,
       transactions: [{
-        id: 'archived',
+        id: 'wechat-archived',
         amountCents: 400,
         categoryId: 'transport',
         note: '地铁',
@@ -105,7 +106,53 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
   assert.ok(bytes.includes(Buffer.from('咖啡')));
   assert.ok(bytes.includes(Buffer.from('地铁')));
   assert.ok(bytes.includes(Buffer.from('2026-08-09')));
+  assert.ok(bytes.includes(Buffer.from('微信支付导入')));
+  assert.ok(bytes.includes(Buffer.from('本机手动记录')));
   assert.ok(!bytes.includes(Buffer.from('5000.00')));
+});
+
+test('wechat CSV bill discovers the header, imports only valid outgoing records and deduplicates', () => {
+  const csv = [
+    '微信支付账单明细',
+    '微信昵称：[已隐藏]',
+    '交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注',
+    '2026-08-09 08:30:01,商户消费,咖啡店,"拿铁,大杯",支出,¥15.00,零钱,支付成功,420001,1001,',
+    '2026-08-08 12:10:00,商户消费,地铁,乘车码,支出,4.00,零钱,支付成功,420002,1002,',
+    '2026-08-08 12:10:00,商户消费,地铁,乘车码,支出,4.00,零钱,支付成功,420002,1002,',
+    '2026-08-07 09:00:00,转账,朋友,转账,收入,20.00,零钱,已收钱,420003,1003,',
+    '2026-08-06 18:00:00,商户消费,餐厅,晚餐,支出,30.00,零钱,已全额退款,420004,1004,',
+    '坏日期,商户消费,商店,商品,支出,abc,零钱,支付成功,420005,1005,'
+  ].join('\n');
+  const parsed = parseWechatBillCsv(csv, new Date(2026, 7, 9, 22));
+  assert.equal(parsed.records.length, 2);
+  assert.equal(parsed.duplicateInFileCount, 1);
+  assert.equal(parsed.skippedIncomeCount, 1);
+  assert.equal(parsed.skippedStatusCount, 1);
+  assert.equal(parsed.skippedInvalidCount, 1);
+  assert.equal(parsed.totalCents, 1900);
+  assert.equal(parsed.dateFrom, '2026-08-08');
+  assert.equal(parsed.dateTo, '2026-08-09');
+  assert.equal(parsed.records[0].categoryId, 'transport');
+  assert.equal(parsed.records[1].note, '拿铁,大杯');
+  assert.match(parsed.records[1].id, /^wechat-[a-z0-9]+-[a-z0-9]+$/);
+});
+
+test('wechat XLSX sheet supports shared strings and rejects future or over-range records', () => {
+  const shared = '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<si><t>交易时间</t></si><si><t>收/支</t></si><si><t>金额（元）</t></si>'
+    + '<si><t>商品</t></si><si><t>交易单号</t></si><si><t>支出</t></si>'
+    + '<si><t>午餐</t></si><si><t>420010</t></si><si><t>支付成功</t></si>'
+    + '<si><t>当前状态</t></si></sst>';
+  const sheet = '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+    + '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c><c r="E1" t="s"><v>4</v></c><c r="F1" t="s"><v>9</v></c></row>'
+    + '<row r="2"><c r="A2" t="inlineStr"><is><t>2026-08-09 12:00:00</t></is></c><c r="B2" t="s"><v>5</v></c><c r="C2"><v>28.50</v></c><c r="D2" t="s"><v>6</v></c><c r="E2" t="s"><v>7</v></c><c r="F2" t="s"><v>8</v></c></row>'
+    + '<row r="3"><c r="A3" t="inlineStr"><is><t>2026-08-10 12:00:00</t></is></c><c r="B3" t="s"><v>5</v></c><c r="C3"><v>9.00</v></c><c r="D3" t="s"><v>6</v></c><c r="E3" t="inlineStr"><is><t>420011</t></is></c><c r="F3" t="s"><v>8</v></c></row>'
+    + '</sheetData></worksheet>';
+  const parsed = parseWechatBillXlsx(sheet, shared, new Date(2026, 7, 9, 22));
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].amountCents, 2850);
+  assert.equal(parsed.records[0].categoryId, 'food');
+  assert.equal(parsed.skippedOutOfRangeCount, 1);
 });
 
 test('acceptance A01 normal calculation', () => {

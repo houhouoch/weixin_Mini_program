@@ -113,6 +113,82 @@ test('transaction commands are idempotent and delete through addTransaction', as
   assert.equal((await listTransactions()).length, 0);
 });
 
+test('wechat bill import writes current and archived months and remains idempotent', async () => {
+  const now = new Date(2026, 7, 9, 22);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  const records = [{
+    id: 'wechat-current-a',
+    amountCents: 1500,
+    categoryId: 'food',
+    note: '咖啡',
+    occurredAt: new Date(2026, 7, 9, 8, 30).getTime()
+  }, {
+    id: 'wechat-history-b',
+    amountCents: 400,
+    categoryId: 'transport',
+    note: '地铁',
+    occurredAt: new Date(2026, 6, 31, 18, 5).getTime()
+  }];
+
+  const first = await addTransaction({
+    action: 'import',
+    commandId: 'wechat-import-1',
+    source: 'wechat',
+    transactions: records
+  });
+  assert.equal(first.importedCount, 2);
+  assert.equal(first.duplicateCount, 0);
+  assert.equal((await listTransactions()).length, 1);
+  assert.equal((await listTransactions({ dateKey: '2026-07-31' }))[0].note, '地铁');
+  assert.equal((await listTransactions({ all: true })).length, 2);
+
+  const second = await addTransaction({
+    action: 'import',
+    commandId: 'wechat-import-2',
+    source: 'wechat',
+    transactions: records
+  });
+  assert.equal(second.importedCount, 0);
+  assert.equal(second.duplicateCount, 2);
+  assert.equal((await listTransactions({ all: true })).length, 2);
+});
+
+test('wechat bill import skips future and records older than 36 months', async () => {
+  const now = new Date(2026, 7, 9, 22);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  const result = await addTransaction({
+    action: 'import',
+    commandId: 'wechat-import-range',
+    source: 'wechat',
+    transactions: [{
+      id: 'wechat-future',
+      amountCents: 100,
+      categoryId: 'other',
+      note: '',
+      occurredAt: new Date(2026, 8, 1).getTime()
+    }, {
+      id: 'wechat-too-old',
+      amountCents: 100,
+      categoryId: 'other',
+      note: '',
+      occurredAt: new Date(2023, 6, 31).getTime()
+    }]
+  });
+  assert.equal(result.importedCount, 0);
+  assert.equal(result.skippedCount, 2);
+  assert.equal((await listTransactions({ all: true })).length, 0);
+});
+
 test('current transaction can be corrected and changes the daily detail', async () => {
   const now = new Date(2026, 7, 9, 10, 20);
   await budgetStore.saveBudget({

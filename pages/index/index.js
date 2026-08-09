@@ -20,6 +20,7 @@ const budgetStore = require('../../services/budget-store');
 const { trackEvent } = require('../../services/analytics');
 const { exportLedger } = require('../../services/ledger-export');
 const { getSpendingSummary } = require('../../services/spending-summary');
+const { previewWechatBill } = require('../../services/wechat-bill-import');
 const themeStore = require('../../services/theme-store');
 const { addTransaction, listTransactions } = require('../../services/transactions');
 const {
@@ -145,6 +146,9 @@ Page({
     amountInput: '',
     amountSizeClass: 'amount-normal',
     budget: null,
+    billImportError: '',
+    billImportLoading: false,
+    billImportPreview: null,
     canSaveToDisk: false,
     categories: CATEGORIES,
     dateLabel: '',
@@ -170,6 +174,7 @@ Page({
     exportFilePath: '',
     isEditSaving: false,
     isBudgetSaving: false,
+    isBillImportSaving: false,
     isExporting: false,
     isSaving: false,
     noteInput: '',
@@ -840,6 +845,82 @@ Page({
     } finally {
       this._exportInFlight = false;
       this.setData({ isExporting: false });
+    }
+  },
+
+  chooseWechatBill() {
+    if (this._billImportReadInFlight || this.data.billImportLoading) return;
+    this._billImportReadInFlight = true;
+    this.setData({
+      billImportError: '',
+      billImportLoading: true,
+      billImportPreview: null
+    });
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['xlsx', 'csv', 'txt'],
+      success: async (result) => {
+        try {
+          const preview = await previewWechatBill(result.tempFiles && result.tempFiles[0], new Date());
+          this.setData({ billImportPreview: preview });
+          trackEvent('bill_import', {
+            outcome: 'previewed',
+            recordCount: preview.importCount
+          });
+        } catch (error) {
+          console.error('预览微信账单失败', error);
+          this.setData({
+            billImportError: error.message || '账单解析失败，请重新选择'
+          });
+          trackEvent('bill_import', { outcome: 'preview_failed' });
+        } finally {
+          this._billImportReadInFlight = false;
+          this.setData({ billImportLoading: false });
+        }
+      },
+      fail: (error) => {
+        this._billImportReadInFlight = false;
+        this.setData({ billImportLoading: false });
+        if (!error || !/cancel/i.test(error.errMsg || '')) {
+          console.error('选择微信账单失败', error);
+          this.setData({ billImportError: '没有读取到文件，请重新选择微信账单。' });
+        }
+      }
+    });
+  },
+
+  async confirmWechatBillImport() {
+    const preview = this.data.billImportPreview;
+    if (!preview || !preview.records.length
+      || this._billImportSaveInFlight || this.data.isBillImportSaving) return;
+    this._billImportSaveInFlight = true;
+    this.setData({ isBillImportSaving: true, billImportError: '' });
+    try {
+      const result = await addTransaction({
+        action: 'import',
+        commandId: commandId('wechat-import'),
+        source: 'wechat',
+        transactions: preview.records
+      });
+      const importedCount = result.importedCount || 0;
+      this.setData({ billImportPreview: null });
+      await this.refreshAfterMutation();
+      wx.showToast({
+        title: importedCount ? `已导入 ${importedCount} 笔` : '没有新增记录',
+        icon: importedCount ? 'success' : 'none'
+      });
+      trackEvent('bill_import', {
+        outcome: importedCount ? 'success' : 'duplicate',
+        recordCount: importedCount
+      });
+    } catch (error) {
+      console.error('导入微信账单失败', error);
+      this.setData({ billImportError: error.message || '导入失败，请重试' });
+      trackEvent('bill_import', { outcome: 'save_failed' });
+    } finally {
+      this._billImportSaveInFlight = false;
+      this.setData({ isBillImportSaving: false });
     }
   },
 

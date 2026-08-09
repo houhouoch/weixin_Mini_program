@@ -906,6 +906,136 @@
   font-size: 21rpx;
 }
 
+.bill-import {
+  margin-top: 28rpx;
+  padding: 28rpx;
+  border: 2rpx solid var(--theme-primary, #123F35);
+  border-radius: 28rpx;
+  background: var(--theme-surface, #FFF9EC);
+}
+
+.bill-import__copy,
+.bill-import__file-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.bill-import__eyebrow {
+  color: var(--theme-accent, #F4C247);
+  font-size: 19rpx;
+  font-weight: 850;
+  letter-spacing: 1.6rpx;
+}
+
+.bill-import__title {
+  margin-top: 8rpx;
+  color: var(--theme-text, #123F35);
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.bill-import__helper,
+.bill-import__skipped,
+.bill-import__privacy {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--theme-muted, #7C837A);
+  font-size: 21rpx;
+  line-height: 1.65;
+}
+
+.bill-import__choose,
+.bill-import__confirm {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88rpx;
+  margin: 22rpx 0 0;
+  padding: 0 22rpx;
+  border-radius: 20rpx;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 84rpx;
+}
+
+.bill-import__choose {
+  border: 2rpx solid var(--theme-primary, #123F35);
+  background: transparent;
+  color: var(--theme-primary, #123F35);
+}
+
+.bill-import__confirm {
+  border: 2rpx solid var(--theme-primary, #123F35);
+  background: var(--theme-primary, #123F35);
+  color: var(--theme-on-primary, #FFF9EC);
+}
+
+.bill-import__choose[disabled],
+.bill-import__confirm[disabled] {
+  opacity: 0.58;
+}
+
+.bill-import__error {
+  display: block;
+  margin-top: 14rpx;
+}
+
+.bill-import__preview {
+  margin-top: 20rpx;
+  padding: 22rpx;
+  border-radius: 20rpx;
+  background: var(--theme-page, #F6EDD8);
+}
+
+.bill-import__file {
+  overflow: hidden;
+  color: var(--theme-text, #123F35);
+  font-size: 23rpx;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bill-import__range {
+  margin-top: 6rpx;
+  color: var(--theme-muted, #7C837A);
+  font-size: 20rpx;
+}
+
+.bill-import__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.bill-import__metric {
+  min-width: 0;
+  padding: 16rpx 8rpx;
+  border: 2rpx solid var(--theme-border, #E6DBC0);
+  border-radius: 16rpx;
+  text-align: center;
+}
+
+.bill-import__metric-value,
+.bill-import__metric-label {
+  display: block;
+}
+
+.bill-import__metric-value {
+  overflow: hidden;
+  color: var(--theme-primary, #123F35);
+  font-size: 24rpx;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bill-import__metric-label {
+  margin-top: 4rpx;
+  color: var(--theme-muted, #7C837A);
+  font-size: 18rpx;
+}
+
 .ledger-export {
   margin-top: 28rpx;
   padding: 28rpx;

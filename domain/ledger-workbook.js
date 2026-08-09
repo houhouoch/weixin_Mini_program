@@ -63,7 +63,9 @@ function makeWorksheet(state, generatedAt) {
       + inlineCell(`C${rowNumber}`, getCategoryLabel(item.categoryId))
       + inlineCell(`D${rowNumber}`, item.note || '')
       + numberCell(`E${rowNumber}`, (item.amountCents / 100).toFixed(2), 5)
-      + inlineCell(`F${rowNumber}`, '本机手动记录')
+      + inlineCell(`F${rowNumber}`, item.id.indexOf('wechat-') === 0
+        ? '微信支付导入'
+        : '本机手动记录')
       + '</row>');
   });
 

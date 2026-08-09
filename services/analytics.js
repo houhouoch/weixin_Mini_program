@@ -5,7 +5,8 @@ const ALLOWED_EVENTS = [
   'share_friend',
   'share_timeline_guide',
   'share_entry_open',
-  'ledger_export'
+  'ledger_export',
+  'bill_import'
 ];
 const FORBIDDEN_KEY = /amount|price|income|expense|saving|openid|unionid|name|avatar|phone/i;
 

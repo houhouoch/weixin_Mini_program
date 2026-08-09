@@ -15,11 +15,13 @@ const required = [
   'pages/index/index.wxss',
   'domain/spending-summary.js',
   'domain/ledger-workbook.js',
+  'domain/wechat-bill.js',
   'domain/theme.js',
   'infrastructure/file-system.js',
   'services/ledger-export.js',
   'services/spending-summary.js',
   'services/theme-store.js',
+  'services/wechat-bill-import.js',
   heroPath,
   'README.md'
 ];
@@ -86,6 +88,8 @@ check(pageJs.includes('toggleSection'), '页面支持独立折叠非核心模块
 check(pageJs.includes('refreshHistoryDetail'), '页面支持按日期读取历史明细');
 check(pageJs.includes('saveEditedTransaction'), '页面支持修改错误交易');
 check(pageJs.includes('handleExportLedger'), '页面支持导出 Excel 流水');
+check(pageJs.includes('wx.chooseMessageFile'), '页面支持从微信会话选择账单文件');
+check(pageJs.includes('confirmWechatBillImport'), '页面支持预览后确认导入微信账单');
 check(pageJs.includes('showMenu: true'), 'Excel 预览显示右上角文档菜单');
 check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel 文件');
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
@@ -106,6 +110,9 @@ check(wxml.includes('修改消费明细'), '页面提供交易修改抽屉');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');
 check(wxml.includes('不含启用前汇总、OPENID 或身份信息'), '导出区明示隐私范围');
+check(wxml.includes('导入微信支付账单'), '历史折叠区提供微信账单导入入口');
+check(wxml.includes('先解压微信发送到邮箱的账单压缩包'), '导入区说明加密压缩包需先解压');
+check(wxml.includes('不会上传账单，不保存微信交易单号原文'), '导入区明示本地解析与隐私边界');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 3'), '本地数据使用 schema 3');
@@ -124,6 +131,8 @@ check(
   '交易模块仅公开 addTransaction/listTransactions'
 );
 check(transactionSource.includes("command.action === 'update'"), '交易服务支持修改命令');
+check(transactionSource.includes("command.action === 'import'"), '交易服务支持批量导入命令');
+check(transactionSource.includes('existingIds'), '交易服务按稳定标识去重导入');
 check(transactionSource.includes('options.dateKey'), '交易服务支持按日期读取当前和归档记录');
 check(transactionSource.includes('交易日期只能在原月份内修改'), '交易服务阻止跨月搬移记录');
 
@@ -134,6 +143,14 @@ const workbookSource = fs.readFileSync(path.join(root, 'domain/ledger-workbook.j
 check(workbookSource.includes('0x04034B50'), 'XLSX 生成器写入 ZIP 本地文件头');
 check(workbookSource.includes('0x06054B50'), 'XLSX 生成器写入 ZIP 中心目录结尾');
 check(!/openid|unionid|avatar|nickName/i.test(workbookSource), 'Excel 生成器不包含身份字段');
+
+const billParserSource = fs.readFileSync(path.join(root, 'domain/wechat-bill.js'), 'utf8');
+check(billParserSource.includes('skippedStatusCount'), '微信账单解析器跳过退款与撤销记录');
+check(billParserSource.includes('duplicateInFileCount'), '微信账单解析器识别文件内重复记录');
+check(!/openid|unionid|avatar|nickName/i.test(billParserSource), '微信账单解析器不提取身份字段');
+
+const fileSystemSource = fs.readFileSync(path.join(root, 'infrastructure/file-system.js'), 'utf8');
+check(fileSystemSource.includes('readZipEntry'), 'XLSX 通过微信文件系统读取压缩条目');
 
 if (failures.length) {
   console.error(`\n${failures.length} 项检查失败：`);

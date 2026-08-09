@@ -79,6 +79,43 @@ test('transaction commands are idempotent and delete through addTransaction', as
   assert.equal((await listTransactions()).length, 0);
 });
 
+test('current transaction can be corrected and changes the daily detail', async () => {
+  const now = new Date(2026, 7, 9, 10, 20);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  await addTransaction({
+    action: 'create',
+    commandId: 'today-create',
+    transactionId: 'today-record',
+    amountCents: 1500,
+    categoryId: 'food',
+    note: '咖啡',
+    occurredAt: now.getTime()
+  });
+
+  const correctedTime = new Date(2026, 7, 8, 10, 20).getTime();
+  await addTransaction({
+    action: 'update',
+    commandId: 'today-update',
+    transactionId: 'today-record',
+    amountCents: 1200,
+    categoryId: 'transport',
+    note: '打车',
+    occurredAt: correctedTime
+  });
+
+  assert.equal((await listTransactions({ dateKey: '2026-08-09' })).length, 0);
+  const detail = await listTransactions({ dateKey: '2026-08-08' });
+  assert.equal(detail.length, 1);
+  assert.equal(detail[0].amountCents, 1200);
+  assert.equal(detail[0].categoryId, 'transport');
+  assert.equal(detail[0].note, '打车');
+});
+
 test('month change can carry settings without transactions', async () => {
   const april = new Date(2026, 3, 20, 10);
   const may = new Date(2026, 4, 1, 10);
@@ -106,6 +143,68 @@ test('month change can carry settings without transactions', async () => {
   assert.equal(archived.length, 1);
   assert.equal(archived[0].monthKey, '2026-04');
   assert.equal(archived[0].transactions[0].note, '地铁');
+});
+
+test('archived daily detail can be corrected or deleted without changing current records', async () => {
+  const april = new Date(2026, 3, 20, 10);
+  const may = new Date(2026, 4, 2, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, april);
+  await addTransaction({
+    action: 'create',
+    commandId: 'archive-create',
+    transactionId: 'archive-record',
+    amountCents: 1500,
+    categoryId: 'food',
+    note: '咖啡',
+    occurredAt: april.getTime()
+  });
+  await budgetStore.startNewMonth('carry', may);
+  await addTransaction({
+    action: 'create',
+    commandId: 'current-create',
+    transactionId: 'current-record',
+    amountCents: 400,
+    categoryId: 'transport',
+    note: '地铁',
+    occurredAt: may.getTime()
+  });
+
+  await addTransaction({
+    action: 'update',
+    commandId: 'archive-update',
+    transactionId: 'archive-record',
+    amountCents: 1800,
+    categoryId: 'food',
+    note: '晚餐',
+    occurredAt: new Date(2026, 3, 21, 10).getTime()
+  });
+  assert.equal((await listTransactions({ dateKey: '2026-04-20' })).length, 0);
+  const movedDetail = await listTransactions({ dateKey: '2026-04-21' });
+  assert.equal(movedDetail[0].amountCents, 1800);
+  assert.equal((await listTransactions()).length, 1);
+
+  await assert.rejects(addTransaction({
+    action: 'update',
+    commandId: 'archive-cross-month',
+    transactionId: 'archive-record',
+    amountCents: 1800,
+    categoryId: 'food',
+    note: '晚餐',
+    occurredAt: new Date(2026, 4, 1, 10).getTime()
+  }), /只能在原月份内修改/);
+
+  await addTransaction({
+    action: 'delete',
+    commandId: 'archive-delete',
+    transactionId: 'archive-record'
+  });
+  assert.equal((await listTransactions({ dateKey: '2026-04-21' })).length, 0);
+  assert.equal((await listTransactions())[0].id, 'current-record');
 });
 
 test('corrupt storage safely degrades', async () => {
@@ -224,6 +323,86 @@ test('annual review uses archived real records and keeps baseline separate', asy
     categoryId: 'other',
     occurredAt: may.getTime()
   }), /请先完成本月设置/);
+});
+
+test('imported cross-day, cross-month and cross-year data stays in the correct review period', async () => {
+  const adapter = makeAdapter();
+  adapter.data.set('today-can-spend:v1', {
+    schemaVersion: 3,
+    monthKey: '2026-08',
+    budget: {
+      incomeCents: 800000,
+      fixedExpenseCents: 400000,
+      savingGoalCents: 100000,
+      historicalSpentBeforeTrackingCents: 500,
+      trackingStartDate: '2026-08-01'
+    },
+    transactions: [
+      {
+        id: 'aug-08-coffee',
+        amountCents: 1500,
+        categoryId: 'food',
+        note: '咖啡',
+        occurredAt: new Date(2026, 7, 8, 9, 30).getTime()
+      },
+      {
+        id: 'aug-09-market',
+        amountCents: 3000,
+        categoryId: 'daily',
+        note: '日用品',
+        occurredAt: new Date(2026, 7, 9, 10, 0).getTime()
+      }
+    ],
+    processedCommandIds: [],
+    history: [
+      {
+        monthKey: '2025-12',
+        historicalSpentBeforeTrackingCents: 0,
+        transactions: [{
+          id: 'dec-31-dinner',
+          amountCents: 8800,
+          categoryId: 'food',
+          note: '跨年晚餐',
+          occurredAt: new Date(2025, 11, 31, 19, 0).getTime()
+        }]
+      },
+      {
+        monthKey: '2026-07',
+        historicalSpentBeforeTrackingCents: 1000,
+        transactions: [{
+          id: 'jul-31-train',
+          amountCents: 4200,
+          categoryId: 'transport',
+          note: '高铁',
+          occurredAt: new Date(2026, 6, 31, 8, 0).getTime()
+        }]
+      }
+    ]
+  });
+  setStorageAdapterForTests(adapter);
+
+  const day = await getSpendingSummary('day', new Date(2026, 7, 9, 12));
+  assert.deepEqual(day.metrics.map((item) => item.value), ['¥30', '¥15', '¥0']);
+
+  const july = await getSpendingSummary('month', new Date(2026, 6, 31, 12));
+  assert.equal(july.metrics[0].value, '¥52');
+  assert.equal(july.chart.reduce((sum, item) => sum + item.amountCents, 0), 4200);
+
+  const year2026 = await getSpendingSummary('year', new Date(2026, 7, 9, 12));
+  assert.equal(year2026.metrics[0].value, '¥102');
+  assert.equal(year2026.chart[6].amountCents, 4200);
+  assert.equal(year2026.chart[7].amountCents, 4500);
+
+  const year2025 = await getSpendingSummary('year', new Date(2025, 11, 31, 12));
+  assert.equal(year2025.metrics[0].value, '¥88');
+  assert.equal(year2025.chart[11].amountCents, 8800);
+
+  const oldYearDetail = await listTransactions({ dateKey: '2025-12-31' });
+  assert.equal(oldYearDetail.length, 1);
+  assert.equal(oldYearDetail[0].note, '跨年晚餐');
+  const currentMonthDetail = await listTransactions({ dateKey: '2026-08-08' });
+  assert.equal(currentMonthDetail.length, 1);
+  assert.equal(currentMonthDetail[0].note, '咖啡');
 });
 
 test('theme preference persists independently and resolves safe contrast', async () => {

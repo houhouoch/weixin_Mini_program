@@ -1,6 +1,6 @@
 # 首页视觉覆盖规则
 
-本页是 MASTER 的具体落地，Figma 目标节点为 [V2 节点 7:3](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=7-3)。
+本页是 MASTER 的具体落地。视觉基线仍为 [V2 节点 7:3](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=7-3)，折叠与历史纠错状态见 [V1.3 Section 25:2](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=25-2)。
 
 ## 信息顺序
 
@@ -8,8 +8,8 @@
 2. 原创消费旅程插画 + 今日可花金额 + 人格；
 3. 今日已花、本月可用和额度进度；
 4. 可折叠消费回看；
-5. 分类、可选用途、金额、保存；
-6. 小票式最近记录；
+5. 可折叠记账区：分类、可选用途、金额、保存；
+6. 可折叠记录与历史：日期、当日总额、逐笔修改/删除；
 7. 隐私安全分享。
 
 ## 数据映射
@@ -21,13 +21,18 @@
 | 预算轨道 | 今日已花 / 今日建议额度 |
 | 分类快捷项 | categories + selectedCategoryId |
 | 用途输入 | noteInput，最多 20 个字符 |
-| 小票行 | categoryLabel、purposeText、occurredAtText、amountText |
+| 历史日期 | historyDateKey、historyDateLabel |
+| 历史明细 | historyTransactions、historyTotalText |
+| 修改抽屉 | editForm、editError、editSaving |
 
 ## 页面规则
 
 - 主图使用 /assets/images/spending-journey-hero-v2.png，aspectFill，文字层由 WXML 独立渲染。
 - 分类固定两行四列；默认餐饮，保存后保留所选分类，清空用途和金额。
-- 小票最多展示最近 5 笔，行高允许删除触控区，不固定整个小票高度。
+- 消费回看、记一笔、记录与历史默认分别折叠，互不强制联动；折叠标题要明确显示“展开/收起”，不用仅图标状态。
+- 历史区使用系统日期选择器；空、读取中、读取失败和真实逐笔列表均在展开区内就地反馈。
+- 每条历史明细提供至少 88rpx 的修改和删除触控目标；修改使用底部抽屉，失败时保留用户已填内容。
+- 修改日期只能落在原月份内；归档记录修改后更新回看，但不得改变当前月预算。
 - 用途为空时用分类名作为标题，避免空白或“未命名”。
 - 余额状态保留主图，但同步改变文字承载层、标题、金额/状态文案、进度和标签；今日超额必须显示超出金额。
 - 消费回看默认使用日视图：今天/昨天/前天 + 最近 7 天柱状趋势 + 最高分类；月/年通过同一分段控件切换。

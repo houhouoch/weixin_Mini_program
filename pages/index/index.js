@@ -1,9 +1,12 @@
 const { deriveBudget } = require('../../domain/budget');
 const { CATEGORIES, getCategoryLabel } = require('../../domain/categories');
 const {
+  daysInMonth,
   daysSince,
   formatChineseDate,
   formatRecordTime,
+  parseLocalDateKey,
+  toMonthKey,
   toDateKey
 } = require('../../domain/date');
 const {
@@ -109,7 +112,27 @@ function emptyForm(now) {
   };
 }
 
+function formatHistoryDate(dateKey) {
+  const date = parseLocalDateKey(dateKey);
+  return date ? `${date.getMonth() + 1}月${date.getDate()}日` : dateKey;
+}
+
+function toTransactionView(item, now) {
+  return {
+    id: item.id,
+    amountCents: item.amountCents,
+    amountText: formatCents(item.amountCents),
+    categoryId: item.categoryId,
+    categoryLabel: getCategoryLabel(item.categoryId),
+    note: item.note,
+    purposeText: item.note || getCategoryLabel(item.categoryId),
+    occurredAt: item.occurredAt,
+    occurredAtText: formatRecordTime(item.occurredAt, now)
+  };
+}
+
 const INITIAL_THEME = resolveTheme(DEFAULT_THEME_SETTINGS);
+const INITIAL_DATE_KEY = toDateKey(new Date());
 const REVIEW_PERIODS = Object.freeze([
   Object.freeze({ id: 'day', label: '日' }),
   Object.freeze({ id: 'month', label: '月' }),
@@ -130,11 +153,21 @@ Page({
     formErrors: EMPTY_ERRORS,
     fromShare: false,
     inputError: '',
+    editDrawerVisible: false,
+    editError: '',
+    editForm: null,
+    historyDateKey: INITIAL_DATE_KEY,
+    historyDateLabel: formatHistoryDate(INITIAL_DATE_KEY),
+    historyError: '',
+    historyLoading: false,
+    historyMaxDateKey: INITIAL_DATE_KEY,
+    historyTotalText: '0.00',
+    historyTransactions: [],
+    isEditSaving: false,
     isBudgetSaving: false,
     isSaving: false,
     noteInput: '',
     readMessage: '',
-    recentTransactions: [],
     reviewError: '',
     reviewLoading: false,
     reviewPeriod: 'day',
@@ -143,6 +176,11 @@ Page({
     result: null,
     shareTitle: '今天还能花｜开始我的支出记录',
     selectedCategoryId: 'food',
+    sections: {
+      composer: false,
+      history: false,
+      review: false
+    },
     statusTone: 'normal',
     themeDraft: Object.assign({}, DEFAULT_THEME_SETTINGS),
     themeDrawerVisible: false,
@@ -173,8 +211,17 @@ Page({
     if (this._isReading) return;
     this._isReading = true;
     const now = new Date();
+    const todayKey = toDateKey(now);
+    const historyDateKey = this._historyDateTouched
+      ? (this.data.historyDateKey > todayKey ? todayKey : this.data.historyDateKey)
+      : todayKey;
     if (!this.data.budget) this.setData({ viewState: 'loading' });
-    this.setData({ dateLabel: formatChineseDate(now) });
+    this.setData({
+      dateLabel: formatChineseDate(now),
+      historyDateKey,
+      historyDateLabel: formatHistoryDate(historyDateKey),
+      historyMaxDateKey: todayKey
+    });
 
     try {
       const initial = await Promise.all([
@@ -198,6 +245,7 @@ Page({
             ? '本地数据无法识别，已安全回到首次设置。'
             : '',
           result: null,
+          historyTransactions: [],
           transactions: [],
           viewState: 'empty'
         });
@@ -242,14 +290,6 @@ Page({
 
   async renderReady(budget, transactions, now) {
     const result = deriveBudget(budget, transactions, now);
-    const recentTransactions = transactions.slice(0, 5).map((item) => ({
-      id: item.id,
-      amountText: formatCents(item.amountCents),
-      categoryId: item.categoryId,
-      categoryLabel: getCategoryLabel(item.categoryId),
-      purposeText: item.note || getCategoryLabel(item.categoryId),
-      occurredAtText: formatRecordTime(item.occurredAt, now)
-    }));
     const persona = personaForStatus(result.status);
     const useDays = daysSince(budget.trackingStartDate, now);
     const shareTitle = `${persona}｜打卡${useDays}天｜${transactions.length}笔｜本月已花¥${formatCents(result.totalSpentCents)}`;
@@ -267,7 +307,6 @@ Page({
         : amountText.length > 7 ? 'amount-medium' : 'amount-normal',
       budget,
       readMessage: '',
-      recentTransactions,
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
@@ -289,23 +328,40 @@ Page({
       transactions,
       viewState: 'ready'
     });
-    await this.refreshReview(now);
+    const secondaryRefreshes = [];
+    if (this.data.sections.review) secondaryRefreshes.push(this.refreshReview(now));
+    if (this.data.sections.history) secondaryRefreshes.push(this.refreshHistoryDetail());
+    await Promise.all(secondaryRefreshes);
     trackEvent('result_viewed', { status: result.status, entry: this.data.fromShare ? 'share' : 'direct' });
   },
 
+  async toggleSection(event) {
+    const section = event.currentTarget.dataset.section;
+    if (!Object.prototype.hasOwnProperty.call(this.data.sections, section)) return;
+    const expanded = !this.data.sections[section];
+    this.setData({ [`sections.${section}`]: expanded });
+    if (!expanded) return;
+    if (section === 'review') await this.refreshReview(new Date());
+    if (section === 'history') await this.refreshHistoryDetail();
+  },
+
   async refreshReview(now) {
+    const requestId = (this._reviewReadId || 0) + 1;
+    this._reviewReadId = requestId;
     this.setData({ reviewLoading: true, reviewError: '' });
     try {
       const reviewSummary = await getSpendingSummary(
         this.data.reviewPeriod,
         now || new Date()
       );
+      if (requestId !== this._reviewReadId) return;
       this.setData({ reviewSummary });
     } catch (error) {
+      if (requestId !== this._reviewReadId) return;
       console.error('读取消费回看失败', error);
       this.setData({ reviewError: '消费回看暂时没读到，请稍后重试。' });
     } finally {
-      this.setData({ reviewLoading: false });
+      if (requestId === this._reviewReadId) this.setData({ reviewLoading: false });
     }
   },
 
@@ -314,6 +370,36 @@ Page({
     if (reviewPeriod === this.data.reviewPeriod) return;
     this.setData({ reviewPeriod });
     this.refreshReview(new Date());
+  },
+
+  async refreshHistoryDetail() {
+    const requestId = (this._historyReadId || 0) + 1;
+    this._historyReadId = requestId;
+    this.setData({ historyLoading: true, historyError: '' });
+    try {
+      const transactions = await listTransactions({ dateKey: this.data.historyDateKey });
+      if (requestId !== this._historyReadId) return;
+      const historyTransactions = transactions.map((item) => toTransactionView(item, new Date()));
+      const historyTotalCents = transactions.reduce((sum, item) => sum + item.amountCents, 0);
+      this.setData({
+        historyDateLabel: formatHistoryDate(this.data.historyDateKey),
+        historyTotalText: formatCents(historyTotalCents),
+        historyTransactions
+      });
+    } catch (error) {
+      if (requestId !== this._historyReadId) return;
+      console.error('读取日期明细失败', error);
+      this.setData({ historyError: '这一天的明细暂时没读到，请重试。' });
+    } finally {
+      if (requestId === this._historyReadId) this.setData({ historyLoading: false });
+    }
+  },
+
+  handleHistoryDateChange(event) {
+    const historyDateKey = event.detail.value;
+    if (!parseLocalDateKey(historyDateKey)) return;
+    this._historyDateTouched = true;
+    this.setData({ historyDateKey }, () => this.refreshHistoryDetail());
   },
 
   handleAmountInput(event) {
@@ -374,16 +460,117 @@ Page({
     }
   },
 
+  openEditTransaction(event) {
+    const transactionId = event.currentTarget.dataset.id;
+    const transaction = this.data.historyTransactions
+      .find((item) => item.id === transactionId);
+    if (!transaction) return;
+    const originalDate = new Date(transaction.occurredAt);
+    const monthKey = toMonthKey(originalDate);
+    const monthEnd = `${monthKey}-${String(daysInMonth(originalDate)).padStart(2, '0')}`;
+    this.setData({
+      editDrawerVisible: true,
+      editError: '',
+      editForm: {
+        amount: centsToInput(transaction.amountCents),
+        categoryId: transaction.categoryId,
+        dateKey: toDateKey(originalDate),
+        id: transaction.id,
+        maxDateKey: monthEnd < this.data.historyMaxDateKey
+          ? monthEnd
+          : this.data.historyMaxDateKey,
+        minDateKey: `${monthKey}-01`,
+        note: transaction.note,
+        originalOccurredAt: transaction.occurredAt
+      }
+    });
+  },
+
+  closeEditDrawer() {
+    if (this.data.isEditSaving) return;
+    this.setData({ editDrawerVisible: false, editError: '', editForm: null });
+  },
+
+  handleEditFormInput(event) {
+    const field = event.currentTarget.dataset.field;
+    this.setData({ [`editForm.${field}`]: event.detail.value, editError: '' });
+  },
+
+  handleEditCategorySelect(event) {
+    this.setData({
+      'editForm.categoryId': event.currentTarget.dataset.id,
+      editError: ''
+    });
+  },
+
+  handleEditDateChange(event) {
+    this.setData({ 'editForm.dateKey': event.detail.value, editError: '' });
+  },
+
+  async saveEditedTransaction() {
+    if (this._editSaveInFlight || this.data.isEditSaving || !this.data.editForm) return;
+    const parsed = parseYuanToCents(this.data.editForm.amount, {
+      allowZero: false,
+      maxCents: TRANSACTION_MAX_CENTS
+    });
+    if (!parsed.ok) {
+      this.setData({ editError: parsed.error });
+      return;
+    }
+    const selectedDate = parseLocalDateKey(this.data.editForm.dateKey);
+    if (!selectedDate) {
+      this.setData({ editError: '请选择有效日期' });
+      return;
+    }
+    const original = new Date(this.data.editForm.originalOccurredAt);
+    selectedDate.setHours(
+      original.getHours(),
+      original.getMinutes(),
+      original.getSeconds(),
+      original.getMilliseconds()
+    );
+    this._editSaveInFlight = true;
+    this.setData({ isEditSaving: true, editError: '' });
+    try {
+      const targetDateKey = this.data.editForm.dateKey;
+      await addTransaction({
+        action: 'update',
+        amountCents: parsed.value,
+        categoryId: this.data.editForm.categoryId,
+        commandId: commandId('update'),
+        note: this.data.editForm.note,
+        occurredAt: selectedDate.getTime(),
+        transactionId: this.data.editForm.id
+      });
+      this.setData({
+        editDrawerVisible: false,
+        editForm: null,
+        historyDateKey: targetDateKey
+      });
+      this._historyDateTouched = true;
+      await this.refreshAfterMutation();
+      wx.showToast({ title: '记录已修改', icon: 'success' });
+    } catch (error) {
+      console.error('修改交易失败', error);
+      this.setData({ editError: error.message || '修改失败，请重试' });
+    } finally {
+      this._editSaveInFlight = false;
+      this.setData({ isEditSaving: false });
+    }
+  },
+
   handleDeleteTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const transaction = this.data.transactions.find((item) => item.id === transactionId);
+    const transaction = this.data.historyTransactions
+      .find((item) => item.id === transactionId);
     if (!transaction) return;
-    const amountText = formatCents(transaction.amountCents);
-    const categoryLabel = getCategoryLabel(transaction.categoryId);
+    const amountText = transaction.amountText;
+    const categoryLabel = transaction.categoryLabel;
     const purpose = transaction.note ? ` · ${transaction.note}` : '';
+    const isCurrentMonth = toMonthKey(transaction.occurredAt) === toMonthKey(new Date());
     wx.showModal({
       title: '删除记录',
-      content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} 记录？删除后预算会重新计算。`,
+      content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} 记录？${isCurrentMonth ? '今日额度会重新计算。' : '对应历史回看会更新。'}`,
       confirmText: '删除',
       confirmColor: '#C84F4A',
       success: async (result) => {

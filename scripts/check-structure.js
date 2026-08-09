@@ -49,6 +49,9 @@ check(pageJs.includes('handleNoteInput'), '页面支持填写消费用途');
 check(pageJs.includes('handleReviewPeriod'), '页面支持日/月/年回看切换');
 check(pageJs.includes('openThemeDrawer'), '页面支持打开主题工作室');
 check(pageJs.includes('saveThemeSettings'), '页面支持保存安全主题设置');
+check(pageJs.includes('toggleSection'), '页面支持独立折叠非核心模块');
+check(pageJs.includes('refreshHistoryDetail'), '页面支持按日期读取历史明细');
+check(pageJs.includes('saveEditedTransaction'), '页面支持修改错误交易');
 
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
 check(wxml.includes('open-type="share"'), '好友分享使用 open-type="share"');
@@ -57,6 +60,13 @@ check(wxml.includes('这笔花在哪儿'), '记录区先回答消费去向');
 check(wxml.includes('maxlength="20"'), '用途说明限制为 20 个字符');
 check(/id: 'day'[\s\S]*id: 'month'[\s\S]*id: 'year'/.test(pageJs), '回看区提供日/月/年三个粒度');
 check(wxml.includes('警示黄与超支红保持固定'), '主题抽屉说明警示语义色不可覆盖');
+check(
+  ['review', 'composer', 'history'].every((section) => wxml.includes(`data-section="${section}"`)),
+  '消费回看、快速记账、记录历史均可独立折叠'
+);
+check(wxml.includes('mode="date"'), '历史回顾使用原生日期选择器');
+check(wxml.includes('修改消费明细'), '页面提供交易修改抽屉');
+check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 3'), '本地数据使用 schema 3');
@@ -74,6 +84,9 @@ check(
   /module\.exports\s*=\s*\{\s*addTransaction,\s*listTransactions\s*\}/.test(transactionSource),
   '交易模块仅公开 addTransaction/listTransactions'
 );
+check(transactionSource.includes("command.action === 'update'"), '交易服务支持修改命令');
+check(transactionSource.includes('options.dateKey'), '交易服务支持按日期读取当前和归档记录');
+check(transactionSource.includes('交易日期只能在原月份内修改'), '交易服务阻止跨月搬移记录');
 
 const analyticsSource = fs.readFileSync(path.join(root, 'services/analytics.js'), 'utf8');
 check(analyticsSource.includes('FORBIDDEN_KEY'), '埋点入口过滤金额和身份字段');

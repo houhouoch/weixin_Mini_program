@@ -25,7 +25,7 @@
 | 消费回看展开 | [17:255](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-255) | `docs/design/figma-v1.2-spending-review.png` | 单页日/月/年切换、三日摘要、7 天趋势和最高分类 |
 | 主题工作室 | [17:339](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=17-339) | `docs/design/figma-v1.2-theme-studio.png` | 6 套预设、安全微调、语义警示色锁定 |
 
-整组对比快照为 `docs/design/figma-v1.2-concepts.png`。这五张是设计确认稿，尚未同步到小程序运行代码。
+整组对比快照为 `docs/design/figma-v1.2-concepts.png`。这五张设计确认稿已同步到小程序单页运行代码；Figma 节点继续作为视觉基线，不覆盖原 V2。
 
 ## 图片来源
 
@@ -50,5 +50,5 @@
 ## 已验证与待验证
 
 - 已验证：原创图片已本地化；原 V2 未被覆盖；五张 V1.2 Figma 节点均可独立打开；375px 快照无横向裁切；额度将尽和今日超额没有文字/插画覆盖；消费回看与主题抽屉在单页范围内可读。
-- 规格已确认、代码待实现：语义状态转换、日/月聚合、schema 3 历史归档、年视图、主题预设与安全微调。
+- 已实现并自动验证：语义状态转换、日/月聚合、schema 3 历史归档、真实年视图、主题预设、安全微调与主题核心对比度。
 - 待开发者工具验证：微信导航栏、安全区、系统字体差异、数字键盘、用途输入、保存状态、删除弹窗、好友分享面板和朋友圈入口。

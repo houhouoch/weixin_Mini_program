@@ -1,5 +1,10 @@
 const { toDateKey, toMonthKey } = require('../domain/date');
-const { clearState, createState, readState, saveState } = require('./state-store');
+const {
+  archiveCurrentState,
+  createState,
+  readState,
+  saveState
+} = require('./state-store');
 
 function makeBudget(values, now) {
   return {
@@ -13,13 +18,19 @@ function makeBudget(values, now) {
 
 async function loadBudgetContext(now) {
   const current = now || new Date();
+  const monthKey = toMonthKey(current);
   const result = await readState();
   if (!result.state) {
     return { status: result.issue === 'corrupt' ? 'corrupt' : 'empty', budget: null };
   }
-  if (result.state.monthKey !== toMonthKey(current)) {
+  if (result.state.monthKey !== monthKey) {
+    if (!result.state.budget) {
+      await saveState(createState(monthKey, null, result.state.history));
+      return { status: 'empty', budget: null };
+    }
     return { status: 'monthChange', budget: result.state.budget };
   }
+  if (!result.state.budget) return { status: 'empty', budget: null };
   return { status: 'ready', budget: result.state.budget };
 }
 
@@ -32,6 +43,8 @@ async function saveBudget(values, now) {
 
   if (result.state && result.state.monthKey === monthKey) {
     state = Object.assign({}, result.state, { budget });
+  } else if (result.state) {
+    state = createState(monthKey, budget, archiveCurrentState(result.state));
   } else {
     state = createState(monthKey, budget);
   }
@@ -41,9 +54,15 @@ async function saveBudget(values, now) {
 
 async function startNewMonth(mode, now) {
   const current = now || new Date();
+  const monthKey = toMonthKey(current);
   const result = await readState();
-  if (mode === 'reset' || !result.state) {
-    await clearState();
+  if (!result.state) {
+    return { status: 'empty' };
+  }
+
+  const history = archiveCurrentState(result.state);
+  if (mode === 'reset' || !result.state.budget) {
+    await saveState(createState(monthKey, null, history));
     return { status: 'empty' };
   }
 
@@ -54,12 +73,15 @@ async function startNewMonth(mode, now) {
     savingGoalCents: previous.savingGoalCents,
     historicalSpentBeforeTrackingCents: 0
   }, current);
-  await saveState(createState(toMonthKey(current), budget));
+  await saveState(createState(monthKey, budget, history));
   return { status: 'ready', budget };
 }
 
-async function resetCurrentMonth() {
-  await clearState();
+async function resetCurrentMonth(now) {
+  const current = now || new Date();
+  const result = await readState();
+  const history = result.state ? result.state.history : [];
+  await saveState(createState(toMonthKey(current), null, history));
 }
 
 module.exports = {

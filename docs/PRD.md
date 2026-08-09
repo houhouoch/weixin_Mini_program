@@ -1,6 +1,6 @@
 # PRD：今天还能花（微信小程序 MVP）
 
-- 文档状态：V1.2 设计基线，功能实现待排期
+- 文档状态：V1.2 已实现，开发者工具视觉与系统能力待验证
 - 版本：1.2
 - 日期：2026-08-09
 - 产品形态：微信原生小程序，单页，本地存储
@@ -169,7 +169,7 @@ monthlyRemaining = monthlyFlexibleBudget - historicalSpentBeforeTracking - sum(r
 
 ```js
 {
-  schemaVersion: 2,
+  schemaVersion: 3,
   monthKey: "YYYY-MM",
   budget: {
     incomeCents: 0,
@@ -186,17 +186,25 @@ monthlyRemaining = monthlyFlexibleBudget - historicalSpentBeforeTracking - sum(r
       note: "咖啡",
       occurredAt: 0
     }
+  ],
+  processedCommandIds: [],
+  history: [
+    {
+      monthKey: "YYYY-MM",
+      historicalSpentBeforeTrackingCents: 0,
+      transactions: []
+    }
   ]
 }
 ```
 
-存储只在当前设备；不登录、不上传、不申请敏感权限。未知版本或损坏数据安全降级。版本 1 的旧交易在读取时迁移为 `categoryId: "other"`、`note: ""`，保留金额和时间；存储 key 保持不变以便读取旧数据。
+存储只在当前设备；不登录、不上传、不申请敏感权限。未知版本或损坏数据安全降级。版本 1/2 在读取时无损迁移到版本 3；版本 1 的旧交易补充 `categoryId: "other"`、`note: ""`，保留金额和时间。存储 key 保持不变以便读取旧数据。
 
-### 6.1 V1.2 历史归档规划
+### 6.1 V1.2 历史归档
 
-当前 `schemaVersion: 2` 在跨月时清空交易，因此只能可靠生成当前月份以及本次启用后的日视图。要实现真实年视图，代码阶段必须升级为 `schemaVersion: 3`，把“当前月工作集”和“只读历史归档”分开保存，并为归档提供有上限的本地保留策略。
+`schemaVersion: 3` 将“当前月工作集”和“只读历史归档”分开保存。跨月沿用或重设时先归档旧月，最多保留 36 个月；同一月份重复归档时覆盖该月副本，避免重复计算。重置当前月只清空当前工作集，不删除往月归档。
 
-`historicalSpentBeforeTrackingCents` 只有汇总金额，没有日期和分类，不能反推旧日期趋势或分类占比。旧数据在日/月/年回看中应标注为“启用前汇总”，不得伪造历史柱状图。schema 3 只允许无损迁移，不得因升级删除当前记录。
+`historicalSpentBeforeTrackingCents` 只有汇总金额，没有日期和分类，不能反推旧日期趋势或分类占比。因此它只计入对应期间总额，并通过范围文案明确说明；趋势柱、最高日/月和分类排行只读取真实逐笔记录。schema 3 迁移不删除当前记录。
 
 ## 7. 页面与交互结构
 
@@ -222,7 +230,7 @@ monthlyRemaining = monthlyFlexibleBudget - historicalSpentBeforeTracking - sum(r
 - 数据接口均返回 Promise；
 - 页面不得直接访问缓存；
 - 保存失败不得假装成功；
-- 自动化测试覆盖金额、日期、状态、跨月、存储损坏和防重复；
+- 自动化测试覆盖金额、日期、状态、跨月归档、schema 迁移、日/月/年聚合、完整主题安全范围、存储损坏和防重复；
 - 微信分享、系统弹窗、键盘、安全区和真机视觉标为开发者工具/真机验证项。
 
 ## 10. 明确不做

@@ -15,7 +15,14 @@ const {
 } = require('../../domain/money');
 const budgetStore = require('../../services/budget-store');
 const { trackEvent } = require('../../services/analytics');
+const { getSpendingSummary } = require('../../services/spending-summary');
+const themeStore = require('../../services/theme-store');
 const { addTransaction, listTransactions } = require('../../services/transactions');
+const {
+  DEFAULT_THEME_SETTINGS,
+  getThemePresets,
+  resolveTheme
+} = require('../../domain/theme');
 
 const EMPTY_ERRORS = {
   income: '',
@@ -35,20 +42,55 @@ function commandId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function statusCopy(result) {
+function statusPresentation(result, spentProgressPercent) {
   if (result.status === 'budgetUnavailable') {
-    return '固定支出和储蓄目标已经用完本月收入，请调整设置。';
+    return {
+      eyebrow: '本月暂无可用额度',
+      amountText: '¥0.00',
+      statusLine1: '固定支出和储蓄目标',
+      statusLine2: '已用完本月收入',
+      badge: '调整设置',
+      railText: '本月没有可分配额度'
+    };
   }
   if (result.status === 'monthOverspent') {
-    return `本月已超支 ¥${formatCents(result.statusAmountCents)}，先暂停非必要消费。`;
+    return {
+      eyebrow: '本月已超出',
+      amountText: `已超 ¥${formatCents(result.statusAmountCents)}`,
+      statusLine1: '本月预算已经用完',
+      statusLine2: '先暂停非必要消费',
+      badge: '本月预警',
+      railText: `本月已超 ¥${formatCents(result.statusAmountCents)}`
+    };
   }
   if (result.status === 'todayOverspent') {
-    return `今天已超出建议额度 ¥${formatCents(result.statusAmountCents)}，明天会重新计算。`;
+    return {
+      eyebrow: '今天已超出',
+      amountText: `已超 ¥${formatCents(result.statusAmountCents)}`,
+      statusLine1: '超过今日建议额度',
+      statusLine2: '明天会重新计算',
+      badge: '先稳住',
+      railText: `已超 ¥${formatCents(result.statusAmountCents)}`
+    };
   }
   if (result.status === 'runningLow') {
-    return '今天的额度快用完了，接下来稍微收一收。';
+    return {
+      eyebrow: '额度快用完了',
+      amountText: `¥${formatCents(result.todayRemainingCents)}`,
+      statusLine1: '今天只剩一点空间',
+      statusLine2: '下一笔先想一想',
+      badge: `还剩 ${Math.max(0, 100 - spentProgressPercent)}%`,
+      railText: `还剩 ¥${formatCents(result.todayRemainingCents)}`
+    };
   }
-  return '按这个金额以内消费，月底会更从容。';
+  return {
+    eyebrow: '今天还能花',
+    amountText: `¥${formatCents(result.todayRemainingCents)}`,
+    statusLine1: '可以从容花',
+    statusLine2: '也知道花去了哪里',
+    badge: '稳稳生活',
+    railText: `还剩 ¥${formatCents(result.todayRemainingCents)}`
+  };
 }
 
 function personaForStatus(status) {
@@ -66,6 +108,13 @@ function emptyForm(now) {
     historicalSpentBeforeTracking: now.getDate() === 1 ? '0.00' : ''
   };
 }
+
+const INITIAL_THEME = resolveTheme(DEFAULT_THEME_SETTINGS);
+const REVIEW_PERIODS = Object.freeze([
+  Object.freeze({ id: 'day', label: '日' }),
+  Object.freeze({ id: 'month', label: '月' }),
+  Object.freeze({ id: 'year', label: '年' })
+]);
 
 Page({
   data: {
@@ -86,10 +135,22 @@ Page({
     noteInput: '',
     readMessage: '',
     recentTransactions: [],
+    reviewError: '',
+    reviewLoading: false,
+    reviewPeriod: 'day',
+    reviewPeriods: REVIEW_PERIODS,
+    reviewSummary: null,
     result: null,
     shareTitle: '今天还能花｜开始我的支出记录',
     selectedCategoryId: 'food',
     statusTone: 'normal',
+    themeDraft: Object.assign({}, DEFAULT_THEME_SETTINGS),
+    themeDrawerVisible: false,
+    themeName: INITIAL_THEME.name,
+    themePresets: getThemePresets(DEFAULT_THEME_SETTINGS.presetId),
+    themeResolved: INITIAL_THEME,
+    themeSettings: Object.assign({}, DEFAULT_THEME_SETTINGS),
+    themeStyle: INITIAL_THEME.styleText,
     transactions: [],
     viewState: 'loading'
   },
@@ -116,7 +177,12 @@ Page({
     this.setData({ dateLabel: formatChineseDate(now) });
 
     try {
-      let context = await budgetStore.loadBudgetContext(now);
+      const initial = await Promise.all([
+        budgetStore.loadBudgetContext(now),
+        themeStore.loadTheme()
+      ]);
+      let context = initial[0];
+      this.applyThemeModel(initial[1]);
       if (context.status === 'monthChange') {
         context = await this.resolveMonthChange(now);
       }
@@ -139,7 +205,7 @@ Page({
       }
 
       const transactions = await listTransactions();
-      this.renderReady(context.budget, transactions, now);
+      await this.renderReady(context.budget, transactions, now);
     } catch (error) {
       console.error('读取本地数据失败', error);
       this.setData({
@@ -155,7 +221,7 @@ Page({
     return new Promise((resolve, reject) => {
       wx.showModal({
         title: '新的月份开始了',
-        content: '要沿用上月预算设置吗？沿用后历史金额和消费记录会清零。',
+        content: '上月记录会归档到消费回看。要沿用预算设置，还是重新设置本月预算？',
         confirmText: '沿用设置',
         cancelText: '重新设置',
         success: async (result) => {
@@ -174,9 +240,8 @@ Page({
     });
   },
 
-  renderReady(budget, transactions, now) {
+  async renderReady(budget, transactions, now) {
     const result = deriveBudget(budget, transactions, now);
-    const amountText = formatCents(result.todayRemainingCents);
     const recentTransactions = transactions.slice(0, 5).map((item) => ({
       id: item.id,
       amountText: formatCents(item.amountCents),
@@ -193,6 +258,8 @@ Page({
         result.todaySpentCents * 100 / result.todaySuggestedBudgetCents
       ))
       : result.todaySpentCents > 0 ? 100 : 0;
+    const presentation = statusPresentation(result, spentProgressPercent);
+    const amountText = presentation.amountText;
 
     this.setData({
       amountSizeClass: amountText.length > 9
@@ -205,10 +272,15 @@ Page({
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
         persona,
+        heroAmountText: presentation.amountText,
+        heroBadge: presentation.badge,
+        heroEyebrow: presentation.eyebrow,
+        heroStatusLine1: presentation.statusLine1,
+        heroStatusLine2: presentation.statusLine2,
         spentProgressPercent,
         status: result.status,
-        statusText: statusCopy(result),
-        todayRemainingText: amountText,
+        statusText: presentation.railText,
+        todayRemainingText: formatCents(result.todayRemainingCents),
         todaySpentText: formatCents(result.todaySpentCents),
         todaySuggestedBudgetText: formatCents(result.todaySuggestedBudgetCents)
       },
@@ -217,7 +289,31 @@ Page({
       transactions,
       viewState: 'ready'
     });
+    await this.refreshReview(now);
     trackEvent('result_viewed', { status: result.status, entry: this.data.fromShare ? 'share' : 'direct' });
+  },
+
+  async refreshReview(now) {
+    this.setData({ reviewLoading: true, reviewError: '' });
+    try {
+      const reviewSummary = await getSpendingSummary(
+        this.data.reviewPeriod,
+        now || new Date()
+      );
+      this.setData({ reviewSummary });
+    } catch (error) {
+      console.error('读取消费回看失败', error);
+      this.setData({ reviewError: '消费回看暂时没读到，请稍后重试。' });
+    } finally {
+      this.setData({ reviewLoading: false });
+    }
+  },
+
+  handleReviewPeriod(event) {
+    const reviewPeriod = event.currentTarget.dataset.period;
+    if (reviewPeriod === this.data.reviewPeriod) return;
+    this.setData({ reviewPeriod });
+    this.refreshReview(new Date());
   },
 
   handleAmountInput(event) {
@@ -312,7 +408,18 @@ Page({
     const now = new Date();
     const context = await budgetStore.loadBudgetContext(now);
     const transactions = await listTransactions();
-    if (context.status === 'ready') this.renderReady(context.budget, transactions, now);
+    if (context.status === 'ready') await this.renderReady(context.budget, transactions, now);
+  },
+
+  applyThemeModel(model) {
+    this.setData({
+      themeDraft: Object.assign({}, model.settings),
+      themeName: model.resolved.name,
+      themePresets: model.presets,
+      themeResolved: model.resolved,
+      themeSettings: Object.assign({}, model.settings),
+      themeStyle: model.resolved.styleText
+    });
   },
 
   openSettings() {
@@ -336,6 +443,73 @@ Page({
   closeDrawer() {
     if (this.data.drawerMode === 'first') return;
     this.setData({ drawerVisible: false, formErrors: Object.assign({}, EMPTY_ERRORS) });
+  },
+
+  openThemeDrawer() {
+    const settings = Object.assign({}, this.data.themeSettings);
+    this.setData({
+      themeDraft: settings,
+      themeDrawerVisible: true,
+      themePresets: getThemePresets(settings.presetId)
+    });
+  },
+
+  closeThemeDrawer() {
+    const resolved = resolveTheme(this.data.themeSettings);
+    this.setData({
+      themeDraft: Object.assign({}, this.data.themeSettings),
+      themeDrawerVisible: false,
+      themePresets: getThemePresets(this.data.themeSettings.presetId),
+      themeResolved: resolved,
+      themeStyle: resolved.styleText
+    });
+  },
+
+  previewTheme(settings) {
+    const resolved = resolveTheme(settings);
+    this.setData({
+      themeDraft: settings,
+      themePresets: getThemePresets(settings.presetId),
+      themeResolved: resolved,
+      themeStyle: resolved.styleText
+    });
+  },
+
+  handleThemePreset(event) {
+    this.previewTheme({
+      presetId: event.currentTarget.dataset.id,
+      hueShift: 0,
+      warmth: 0,
+      brightness: 0
+    });
+  },
+
+  handleThemeSlider(event) {
+    const field = event.currentTarget.dataset.field;
+    const settings = Object.assign({}, this.data.themeDraft, {
+      [field]: Number(event.detail.value)
+    });
+    this.previewTheme(settings);
+  },
+
+  resetThemeDraft() {
+    this.previewTheme(Object.assign({}, DEFAULT_THEME_SETTINGS));
+  },
+
+  async saveThemeSettings() {
+    if (this._themeSaveInFlight) return;
+    this._themeSaveInFlight = true;
+    try {
+      const model = await themeStore.saveTheme(this.data.themeDraft);
+      this.applyThemeModel(model);
+      this.setData({ themeDrawerVisible: false });
+      wx.showToast({ title: '主题已应用', icon: 'success' });
+    } catch (error) {
+      console.error('保存主题失败', error);
+      wx.showToast({ title: '主题保存失败', icon: 'none' });
+    } finally {
+      this._themeSaveInFlight = false;
+    }
   },
 
   noop() {},
@@ -405,7 +579,7 @@ Page({
       success: async (result) => {
         if (!result.confirm) return;
         try {
-          await budgetStore.resetCurrentMonth();
+          await budgetStore.resetCurrentMonth(new Date());
           const now = new Date();
           this.setData({
             budget: null,

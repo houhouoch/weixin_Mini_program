@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 
 const { setStorageAdapterForTests } = require('../infrastructure/storage');
 const budgetStore = require('../services/budget-store');
+const { getSpendingSummary } = require('../services/spending-summary');
+const themeStore = require('../services/theme-store');
+const { readState } = require('../services/state-store');
 const { addTransaction, listTransactions } = require('../services/transactions');
 
 function makeAdapter() {
@@ -99,6 +102,10 @@ test('month change can carry settings without transactions', async () => {
   assert.equal(carried.status, 'ready');
   assert.equal(carried.budget.historicalSpentBeforeTrackingCents, 0);
   assert.equal((await listTransactions()).length, 0);
+  const archived = (await readState()).state.history;
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0].monthKey, '2026-04');
+  assert.equal(archived[0].transactions[0].note, '地铁');
 });
 
 test('corrupt storage safely degrades', async () => {
@@ -135,7 +142,107 @@ test('legacy schema migrates transactions to other without losing amount or time
     note: '',
     occurredAt
   }]);
-  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 2);
+  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 3);
+  assert.deepEqual(adapter.data.get('today-can-spend:v1').history, []);
+});
+
+test('schema 2 migrates to schema 3 without changing current records', async () => {
+  const adapter = makeAdapter();
+  const occurredAt = new Date(2026, 7, 9, 9, 30).getTime();
+  adapter.data.set('today-can-spend:v1', {
+    schemaVersion: 2,
+    monthKey: '2026-08',
+    budget: {
+      incomeCents: 800000,
+      fixedExpenseCents: 400000,
+      savingGoalCents: 100000,
+      historicalSpentBeforeTrackingCents: 5000,
+      trackingStartDate: '2026-08-01'
+    },
+    transactions: [{
+      id: 'v2-1',
+      amountCents: 1500,
+      categoryId: 'food',
+      note: '咖啡',
+      occurredAt
+    }],
+    processedCommandIds: []
+  });
+  setStorageAdapterForTests(adapter);
+
+  const transactions = await listTransactions();
+  assert.equal(transactions.length, 1);
+  assert.equal(transactions[0].note, '咖啡');
+  const state = adapter.data.get('today-can-spend:v1');
+  assert.equal(state.schemaVersion, 3);
+  assert.deepEqual(state.history, []);
+});
+
+test('annual review uses archived real records and keeps baseline separate', async () => {
+  const april = new Date(2026, 3, 20, 10);
+  const may = new Date(2026, 4, 2, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 5000
+  }, april);
+  await addTransaction({
+    action: 'create',
+    commandId: 'april-food',
+    amountCents: 1500,
+    categoryId: 'food',
+    note: '咖啡',
+    occurredAt: april.getTime()
+  });
+  await budgetStore.startNewMonth('carry', may);
+  await addTransaction({
+    action: 'create',
+    commandId: 'may-transport',
+    amountCents: 400,
+    categoryId: 'transport',
+    note: '地铁',
+    occurredAt: may.getTime()
+  });
+
+  const annual = await getSpendingSummary('year', may);
+  assert.equal(annual.metrics[0].value, '¥69');
+  assert.match(annual.scopeText, /2026年4月开始/);
+  assert.match(annual.scopeText, /启用前汇总仅计入总额/);
+  assert.equal(annual.chart[3].amountCents, 1500);
+  assert.equal(annual.chart[4].amountCents, 400);
+
+  await budgetStore.resetCurrentMonth(may);
+  const state = (await readState()).state;
+  assert.equal(state.budget, null);
+  assert.equal(state.history.length, 1);
+  assert.equal(state.history[0].monthKey, '2026-04');
+  await assert.rejects(addTransaction({
+    action: 'create',
+    commandId: 'after-reset',
+    amountCents: 100,
+    categoryId: 'other',
+    occurredAt: may.getTime()
+  }), /请先完成本月设置/);
+});
+
+test('theme preference persists independently and resolves safe contrast', async () => {
+  const saved = await themeStore.saveTheme({
+    presetId: 'midnight',
+    hueShift: 12,
+    warmth: -3,
+    brightness: 4
+  });
+  assert.equal(saved.settings.presetId, 'midnight');
+  assert.match(saved.resolved.styleText, /--theme-primary:/);
+
+  const loaded = await themeStore.loadTheme();
+  assert.deepEqual(loaded.settings, saved.settings);
+  assert.equal(loaded.presets.filter((item) => item.selected).length, 1);
+
+  const reset = await themeStore.resetTheme();
+  assert.equal(reset.settings.presetId, 'forest');
+  assert.equal(reset.settings.hueShift, 0);
 });
 
 test('transaction rejects unknown category and overlong purpose', async () => {

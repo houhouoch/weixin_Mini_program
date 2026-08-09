@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'today-can-spend:v1';
+const THEME_STORAGE_KEY = 'today-can-spend:theme:v1';
 
 let storageAdapter = null;
 
@@ -19,7 +20,7 @@ function asError(error, fallbackMessage) {
   return new Error((error && error.errMsg) || fallbackMessage);
 }
 
-function readRaw() {
+function readKey(key) {
   return new Promise((resolve, reject) => {
     let adapter;
     try {
@@ -29,7 +30,7 @@ function readRaw() {
       return;
     }
     adapter.getStorage({
-      key: STORAGE_KEY,
+      key,
       success: (result) => resolve(result.data),
       fail: (error) => {
         if (isMissingKeyError(error)) resolve(undefined);
@@ -39,7 +40,7 @@ function readRaw() {
   });
 }
 
-function writeRaw(data) {
+function writeKey(key, data) {
   return new Promise((resolve, reject) => {
     let adapter;
     try {
@@ -49,7 +50,7 @@ function writeRaw(data) {
       return;
     }
     adapter.setStorage({
-      key: STORAGE_KEY,
+      key,
       data,
       success: () => resolve(),
       fail: (error) => reject(asError(error, '保存本地数据失败'))
@@ -57,7 +58,7 @@ function writeRaw(data) {
   });
 }
 
-function removeRaw() {
+function removeKey(key) {
   return new Promise((resolve, reject) => {
     let adapter;
     try {
@@ -67,7 +68,7 @@ function removeRaw() {
       return;
     }
     adapter.removeStorage({
-      key: STORAGE_KEY,
+      key,
       success: () => resolve(),
       fail: (error) => {
         if (isMissingKeyError(error)) resolve();
@@ -77,13 +78,40 @@ function removeRaw() {
   });
 }
 
+function readRaw() {
+  return readKey(STORAGE_KEY);
+}
+
+function writeRaw(data) {
+  return writeKey(STORAGE_KEY, data);
+}
+
+function removeRaw() {
+  return removeKey(STORAGE_KEY);
+}
+
+function readThemeRaw() {
+  return readKey(THEME_STORAGE_KEY);
+}
+
+function writeThemeRaw(data) {
+  return writeKey(THEME_STORAGE_KEY, data);
+}
+
+function removeThemeRaw() {
+  return removeKey(THEME_STORAGE_KEY);
+}
+
 function setStorageAdapterForTests(adapter) {
   storageAdapter = adapter || null;
 }
 
 module.exports = {
   readRaw,
+  readThemeRaw,
   removeRaw,
+  removeThemeRaw,
   setStorageAdapterForTests,
-  writeRaw
+  writeRaw,
+  writeThemeRaw
 };

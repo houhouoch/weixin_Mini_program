@@ -46,7 +46,7 @@ function assertCommand(command) {
 async function executeCommand(command) {
   assertCommand(command);
   const result = await readState();
-  if (!result.state) {
+  if (!result.state || !result.state.budget) {
     throw new Error('请先完成本月设置');
   }
   const state = result.state;

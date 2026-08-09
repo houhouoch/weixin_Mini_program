@@ -1,6 +1,6 @@
 # 今天还能花｜微信小程序 MVP
 
-一个只用本地数据回答“今天还能安全花多少钱”的原生微信小程序。项目无登录、无后端、无云开发、无第三方 UI 库，首页完成设置、查看结果、记一笔、删除、修改、重置、跨天/跨月和隐私安全分享的核心闭环。
+一个只用本地数据回答“今天还能安全花多少钱”的原生微信小程序。项目无登录、无后端、无云开发、无第三方 UI 库，首页完成设置、查看结果、记一笔、删除、修改、重置、跨天/跨月、日/月/年消费回看、主题定制和隐私安全分享的核心闭环。
 
 ## 导入微信开发者工具
 
@@ -19,10 +19,12 @@
 ```text
 app.*                         小程序入口与全局样式
 pages/index/                  唯一主页面
-domain/                       金额、日期、分类与预算纯逻辑
+domain/                       金额、日期、分类、预算、回看与主题纯逻辑
 infrastructure/storage.js     唯一微信缓存边界
-services/budget-store.js      设置、重置与跨月
+services/budget-store.js      设置、重置、跨月与历史归档
 services/transactions.js      Promise 交易 API（仅 add/list）
+services/spending-summary.js  日/月/年真实本地记录聚合
+services/theme-store.js       主题预设与安全微调持久化
 services/analytics.js         隐私过滤后的统一 trackEvent
 tests/                        Node 自动化测试
 scripts/check-structure.js    单页、存储边界与分享静态检查
@@ -36,9 +38,9 @@ docs/design/                  Figma 交付、原创图片来源与页面快照
 
 ## 数据字段
 
-本地存储 key 为 `today-can-spend:v1`，结构包含：
+预算和记录使用本地 key `today-can-spend:v1`，结构包含：
 
-- `schemaVersion`：当前为 2；
+- `schemaVersion`：当前为 3；
 - `monthKey`：`YYYY-MM`；
 - `budget.incomeCents`：本月收入（分）；
 - `budget.fixedExpenseCents`：固定支出（分）；
@@ -47,10 +49,15 @@ docs/design/                  Figma 交付、原创图片来源与页面快照
 - `budget.trackingStartDate`：`YYYY-MM-DD`；
 - `transactions[]`：本月交易，包含本地 ID、金额分、分类 ID、可选用途和本地时间戳；
 - `processedCommandIds[]`：最近交易命令 ID，用于幂等防重复。
+- `history[]`：最多保留 36 个已结束月份的启用前汇总与真实逐笔记录，用于年度回看。
 
 页面不会直接调用缓存 API。交易模块只公开返回 Promise 的 `addTransaction(command)` 与 `listTransactions()`；删除通过 `addTransaction({ action: 'delete' })` 完成。
 
-固定分类为餐饮、交通、购物、日用、娱乐、医疗、人情、其他；用途最多 20 个字符，只保存在本机，不进入埋点或分享参数。旧版 `schemaVersion: 1` 数据会原地迁移到版本 2，历史记录保留金额和时间，并归入“其他”、用途留空。存储 key 继续使用 `today-can-spend:v1`，避免升级时丢失本机旧数据。
+固定分类为餐饮、交通、购物、日用、娱乐、医疗、人情、其他；用途最多 20 个字符，只保存在本机，不进入埋点或分享参数。旧版 `schemaVersion: 1/2` 数据会原地无损迁移到版本 3；版本 1 的旧记录保留金额和时间，并归入“其他”、用途留空。存储 key 保持不变，避免升级时丢失本机旧数据。
+
+主题单独保存在 `today-can-spend:theme:v1`。用户只能从 6 套预设中选择，并在限定范围内调整色相、背景温度和亮度；超支红、警示黄及其文字色由系统锁定。重置本月会清空当前设置与当前月记录，但不会删除已经归档的往月数据或主题偏好。
+
+消费回看的总额可包含“启用前已花”，但日/月/年趋势、最高日/月和分类排行只使用具有真实时间与分类的逐笔记录，不会把汇总金额伪造成历史明细。
 
 ## 计算公式
 
@@ -81,4 +88,4 @@ node --test tests/*.test.js
 node scripts/check-structure.js
 ```
 
-自动化覆盖金额解析、核心计算/日期/存储场景、分类与用途校验、旧数据迁移、交易幂等、跨月沿用和损坏数据降级。微信分享面板、系统弹窗、数字键盘、用途输入、安全区以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。
+自动化覆盖金额解析、核心计算/日期/存储场景、分类与用途校验、schema 1/2 迁移、交易幂等、跨月归档、日/月/年聚合、主题持久化与对比度。微信分享面板、系统弹窗、数字键盘、用途输入、安全区、CSS 变量兼容性以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。

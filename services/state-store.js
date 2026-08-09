@@ -2,9 +2,11 @@ const { BUDGET_FIELD_MAX_CENTS, TRANSACTION_MAX_CENTS } = require('../domain/mon
 const { isValidCategoryId } = require('../domain/categories');
 const { readRaw, removeRaw, writeRaw } = require('../infrastructure/storage');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const LEGACY_SCHEMA_VERSION = 1;
+const PREVIOUS_SCHEMA_VERSION = 2;
 const NOTE_MAX_LENGTH = 20;
+const HISTORY_MONTH_LIMIT = 36;
 
 function isIntegerBetween(value, min, max) {
   return Number.isInteger(value) && value >= min && value <= max;
@@ -48,36 +50,80 @@ function isValidLegacyTransaction(transaction) {
   );
 }
 
-function hasValidStateShell(state, transactionValidator) {
+function isValidArchiveEntry(entry) {
+  return Boolean(
+    entry
+    && /^\d{4}-\d{2}$/.test(entry.monthKey)
+    && isIntegerBetween(
+      entry.historicalSpentBeforeTrackingCents,
+      0,
+      BUDGET_FIELD_MAX_CENTS
+    )
+    && Array.isArray(entry.transactions)
+    && entry.transactions.every(isValidTransaction)
+  );
+}
+
+function hasValidStateShell(state, transactionValidator, allowNullBudget) {
+  const validBudget = allowNullBudget
+    ? state && (state.budget === null || isValidBudget(state.budget))
+    : state && isValidBudget(state.budget);
   return Boolean(
     state
     && /^\d{4}-\d{2}$/.test(state.monthKey)
-    && isValidBudget(state.budget)
+    && validBudget
     && Array.isArray(state.transactions)
     && state.transactions.every(transactionValidator)
+    && (state.budget !== null || state.transactions.length === 0)
     && Array.isArray(state.processedCommandIds)
     && state.processedCommandIds.every((id) => typeof id === 'string')
   );
 }
 
 function isValidState(state) {
-  return Boolean(state && state.schemaVersion === SCHEMA_VERSION)
-    && hasValidStateShell(state, isValidTransaction);
+  return Boolean(
+    state
+    && state.schemaVersion === SCHEMA_VERSION
+    && hasValidStateShell(state, isValidTransaction, true)
+    && Array.isArray(state.history)
+    && state.history.length <= HISTORY_MONTH_LIMIT
+    && state.history.every(isValidArchiveEntry)
+  );
 }
 
-function migrateLegacyState(state) {
+function migrateSchemaOne(state) {
   if (!state
     || state.schemaVersion !== LEGACY_SCHEMA_VERSION
-    || !hasValidStateShell(state, isValidLegacyTransaction)) {
+    || !hasValidStateShell(state, isValidLegacyTransaction, false)) {
+    return null;
+  }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    monthKey: state.monthKey,
+    budget: state.budget,
+    transactions: state.transactions.map((transaction) => Object.assign({}, transaction, {
+      categoryId: 'other',
+      note: ''
+    })),
+    processedCommandIds: state.processedCommandIds,
+    history: []
+  };
+}
+
+function migrateSchemaTwo(state) {
+  if (!state
+    || state.schemaVersion !== PREVIOUS_SCHEMA_VERSION
+    || !hasValidStateShell(state, isValidTransaction, false)) {
     return null;
   }
   return Object.assign({}, state, {
     schemaVersion: SCHEMA_VERSION,
-    transactions: state.transactions.map((transaction) => Object.assign({}, transaction, {
-      categoryId: 'other',
-      note: ''
-    }))
+    history: []
   });
+}
+
+function migrateLegacyState(state) {
+  return migrateSchemaTwo(state) || migrateSchemaOne(state);
 }
 
 async function readState() {
@@ -94,14 +140,30 @@ async function readState() {
   return { issue: null, state: migrated };
 }
 
-function createState(monthKey, budget) {
+function createState(monthKey, budget, history) {
   return {
     schemaVersion: SCHEMA_VERSION,
     monthKey,
-    budget,
+    budget: budget || null,
     transactions: [],
-    processedCommandIds: []
+    processedCommandIds: [],
+    history: Array.isArray(history) ? history.slice(-HISTORY_MONTH_LIMIT) : []
   };
+}
+
+function archiveCurrentState(state) {
+  if (!state || !state.budget) return state && Array.isArray(state.history) ? state.history : [];
+  const entry = {
+    monthKey: state.monthKey,
+    historicalSpentBeforeTrackingCents:
+      state.budget.historicalSpentBeforeTrackingCents,
+    transactions: state.transactions.slice()
+  };
+  return state.history
+    .filter((item) => item.monthKey !== state.monthKey)
+    .concat(entry)
+    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+    .slice(-HISTORY_MONTH_LIMIT);
 }
 
 async function saveState(state) {
@@ -117,7 +179,9 @@ async function clearState() {
 }
 
 module.exports = {
+  HISTORY_MONTH_LIMIT,
   SCHEMA_VERSION,
+  archiveCurrentState,
   clearState,
   createState,
   readState,

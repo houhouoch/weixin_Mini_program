@@ -1,4 +1,4 @@
-<view class="page-shell">
+<view class="page-shell" style="{{themeStyle}}">
   <view class="share-entry" wx:if="{{fromShare && viewState !== 'ready'}}">
     <text class="share-entry__eyebrow">朋友分享给你一个简单的预算方法</text>
     <text class="share-entry__title">开始我的支出记录</text>
@@ -31,7 +31,7 @@
   </view>
 
   <block wx:if="{{viewState === 'ready'}}">
-    <view class="hero-card">
+    <view class="hero-card hero-card--{{statusTone}}">
       <image
         class="hero-art"
         src="/assets/images/spending-journey-hero-v2.png"
@@ -40,13 +40,15 @@
       />
       <view class="hero-copy-paper"></view>
       <view class="hero-content">
-        <text class="hero-eyebrow">今天还能花</text>
+        <text class="hero-eyebrow">{{result.heroEyebrow}}</text>
         <view class="hero-amount {{amountSizeClass}}">
-          <text class="hero-currency">¥</text>
-          <text>{{result.todayRemainingText}}</text>
+          <text>{{result.heroAmountText}}</text>
         </view>
-        <text class="hero-status">可以从容花，也知道花去了哪里</text>
-        <text class="hero-badge">{{result.persona}}</text>
+        <view class="hero-status">
+          <text>{{result.heroStatusLine1}}</text>
+          <text>{{result.heroStatusLine2}}</text>
+        </view>
+        <text class="hero-badge">{{result.heroBadge}}</text>
       </view>
     </view>
 
@@ -59,6 +61,50 @@
         <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
       </view>
       <text class="budget-rail__helper">建议额度 ¥{{result.todaySuggestedBudgetText}} · {{result.statusText}}</text>
+    </view>
+
+    <view class="review-card">
+      <text class="review-title">消费回看</text>
+      <text class="review-subtitle">先看趋势，不把首页变成复杂报表</text>
+
+      <view class="review-tabs" role="tablist" aria-label="选择消费回看范围">
+        <button
+          wx:for="{{reviewPeriods}}"
+          wx:key="id"
+          class="review-tab {{reviewPeriod === item.id ? 'review-tab--active' : ''}}"
+          data-period="{{item.id}}"
+          bindtap="handleReviewPeriod"
+          aria-label="查看{{item.label}}消费回看"
+        >{{item.label}}</button>
+      </view>
+
+      <view class="review-loading" wx:if="{{reviewLoading}}" aria-role="status">正在整理本地记录…</view>
+      <view class="review-error" wx:elif="{{reviewError}}" aria-role="alert">{{reviewError}}</view>
+      <block wx:elif="{{reviewSummary}}">
+        <view class="review-metrics">
+          <view class="review-metric" wx:for="{{reviewSummary.metrics}}" wx:key="label">
+            <text class="review-metric__label">{{item.label}}</text>
+            <text class="review-metric__value">{{item.value}}</text>
+          </view>
+        </view>
+
+        <view class="review-chart" aria-label="消费趋势柱状图">
+          <view
+            class="review-bar"
+            wx:for="{{reviewSummary.chart}}"
+            wx:key="fullLabel"
+            aria-label="{{item.accessibilityLabel}}"
+          >
+            <view class="review-bar__track">
+              <view class="review-bar__fill {{item.label === '今' ? 'review-bar__fill--today' : ''}}" style="height: {{item.percent}}%;"></view>
+            </view>
+            <text class="review-bar__label">{{item.label}}</text>
+          </view>
+        </view>
+
+        <text class="review-insight">{{reviewSummary.insightText}}</text>
+        <text class="review-scope">{{reviewSummary.scopeText}}</text>
+      </block>
     </view>
 
     <view class="record-composer">
@@ -165,7 +211,7 @@
   <view class="legal-note">本结果仅用于日常预算参考，不构成理财建议。</view>
 </view>
 
-<view class="drawer-layer" wx:if="{{drawerVisible}}" catchtouchmove="noop">
+<view class="drawer-layer" style="{{themeStyle}}" wx:if="{{drawerVisible}}" catchtouchmove="noop">
   <view class="drawer-mask" bindtap="closeDrawer"></view>
   <view class="settings-drawer">
     <view class="drawer-handle"></view>
@@ -226,6 +272,14 @@
         <text>数据只保存在当前设备中，不会上传。</text>
       </view>
 
+      <button class="theme-entry" bindtap="openThemeDrawer" aria-label="打开页面主题设置">
+        <view class="theme-entry__copy">
+          <text class="theme-entry__title">页面主题</text>
+          <text class="theme-entry__subtitle">当前：{{themeName}}</text>
+        </view>
+        <text class="theme-entry__action">选择主题</text>
+      </button>
+
       <button
         class="primary-button drawer-save"
         bindtap="saveBudgetForm"
@@ -238,6 +292,106 @@
         class="reset-button"
         bindtap="resetCurrentMonth"
       >重置本月数据</button>
+    </scroll-view>
+  </view>
+</view>
+
+<view class="drawer-layer theme-layer" style="{{themeStyle}}" wx:if="{{themeDrawerVisible}}" catchtouchmove="noop">
+  <view class="drawer-mask" bindtap="closeThemeDrawer"></view>
+  <view class="theme-drawer">
+    <view class="drawer-handle"></view>
+    <text class="theme-drawer__title">选择你的页面气质</text>
+    <text class="theme-drawer__subtitle">先选一套主题，再微调主色与背景温度</text>
+
+    <scroll-view class="theme-scroll" scroll-y="true">
+      <view class="theme-preset-grid" role="list">
+        <button
+          wx:for="{{themePresets}}"
+          wx:key="id"
+          class="theme-preset {{item.selected ? 'theme-preset--selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="handleThemePreset"
+          aria-label="选择{{item.name}}主题"
+        >
+          <view class="theme-swatches">
+            <view
+              wx:for="{{item.colors}}"
+              wx:for-item="color"
+              wx:key="*this"
+              class="theme-swatch"
+              style="background: {{color}};"
+            ></view>
+          </view>
+          <text>{{item.name}}{{item.selected ? ' ✓' : ''}}</text>
+        </button>
+      </view>
+
+      <view class="theme-advanced">
+        <text class="theme-advanced__title">高级微调</text>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>主色调</text>
+            <text>{{themeDraft.hueShift}}</text>
+          </view>
+          <slider
+            min="-30"
+            max="30"
+            step="1"
+            value="{{themeDraft.hueShift}}"
+            data-field="hueShift"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="{{themeResolved.primary}}"
+            block-color="{{themeResolved.primary}}"
+            aria-label="调整主色调"
+          />
+        </view>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>背景温度</text>
+            <text>{{themeDraft.warmth}}</text>
+          </view>
+          <slider
+            min="-10"
+            max="10"
+            step="1"
+            value="{{themeDraft.warmth}}"
+            data-field="warmth"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="#F4B942"
+            block-color="#F4B942"
+            aria-label="调整背景温度"
+          />
+        </view>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>页面亮度</text>
+            <text>{{themeDraft.brightness}}</text>
+          </view>
+          <slider
+            min="-10"
+            max="10"
+            step="1"
+            value="{{themeDraft.brightness}}"
+            data-field="brightness"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="{{themeResolved.primary}}"
+            block-color="{{themeResolved.primary}}"
+            aria-label="调整页面亮度"
+          />
+        </view>
+      </view>
+
+      <view class="theme-safety-note">
+        <text>警示黄与超支红保持固定，确保任何主题都能看懂。</text>
+      </view>
+
+      <view class="theme-actions">
+        <button class="theme-action theme-action--secondary" bindtap="resetThemeDraft">恢复默认</button>
+        <button class="theme-action theme-action--primary" bindtap="saveThemeSettings">应用主题</button>
+      </view>
     </scroll-view>
   </view>
 </view>

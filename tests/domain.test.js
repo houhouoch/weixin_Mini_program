@@ -9,6 +9,12 @@ const {
   toDateKey
 } = require('../domain/date');
 const { formatCents, parseYuanToCents } = require('../domain/money');
+const { deriveSpendingSummary } = require('../domain/spending-summary');
+const {
+  contrastRatio,
+  getThemePresets,
+  resolveTheme
+} = require('../domain/theme');
 
 function budget(overrides) {
   return Object.assign({
@@ -93,4 +99,53 @@ test('date rules handle leap years, month end and usage days', () => {
   assert.equal(daysRemainingIncludingToday(new Date(2026, 3, 30)), 1);
   assert.equal(toDateKey(new Date(2026, 0, 2)), '2026-01-02');
   assert.equal(daysSince('2026-04-20', new Date(2026, 3, 22)), 3);
+});
+
+test('day and month summaries use only real dated records for trends', () => {
+  const now = new Date(2026, 7, 9, 12);
+  const state = {
+    monthKey: '2026-08',
+    budget: budget({
+      historicalSpentBeforeTrackingCents: 5000,
+      trackingStartDate: '2026-08-01'
+    }),
+    transactions: [
+      { id: 'today', amountCents: 1500, categoryId: 'food', note: '咖啡', occurredAt: now.getTime() },
+      { id: 'yesterday', amountCents: 400, categoryId: 'transport', note: '地铁', occurredAt: new Date(2026, 7, 8, 8).getTime() }
+    ],
+    history: []
+  };
+
+  const day = deriveSpendingSummary(state, 'day', now);
+  assert.deepEqual(day.metrics.map((item) => item.value), ['¥15', '¥4', '¥0']);
+  assert.match(day.insightText, /餐饮 ¥15/);
+  assert.match(day.scopeText, /趋势不含启用前汇总 ¥50/);
+
+  const month = deriveSpendingSummary(state, 'month', now);
+  assert.equal(month.metrics[0].value, '¥69');
+  assert.equal(month.chart.reduce((sum, item) => sum + item.amountCents, 0), 1900);
+  assert.match(month.scopeText, /趋势不含该汇总/);
+});
+
+test('all theme presets keep readable contrast across the full safe tuning range', () => {
+  getThemePresets('forest').forEach((preset) => {
+    for (let hueShift = -30; hueShift <= 30; hueShift += 1) {
+      for (let warmth = -10; warmth <= 10; warmth += 1) {
+        for (let brightness = -10; brightness <= 10; brightness += 1) {
+          const resolved = resolveTheme({
+            presetId: preset.id,
+            hueShift,
+            warmth,
+            brightness
+          });
+          assert.ok(contrastRatio(resolved.primary, resolved.onPrimary) >= 4.5);
+          assert.ok(contrastRatio(resolved.accent, resolved.onAccent) >= 4.5);
+          assert.ok(contrastRatio(resolved.page, resolved.text) >= 4.5);
+          assert.ok(contrastRatio(resolved.surface, resolved.text) >= 4.5);
+          assert.ok(contrastRatio(resolved.page, resolved.muted) >= 3);
+          assert.ok(contrastRatio(resolved.surface, resolved.muted) >= 3);
+        }
+      }
+    }
+  });
 });

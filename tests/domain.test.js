@@ -11,7 +11,11 @@ const {
 const { formatCents, parseYuanToCents } = require('../domain/money');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
-const { parseWechatBillCsv, parseWechatBillXlsx } = require('../domain/wechat-bill');
+const {
+  parseExcelSerialTimestamp,
+  parseWechatBillCsv,
+  parseWechatBillXlsx
+} = require('../domain/wechat-bill');
 const {
   contrastRatio,
   getThemePresets,
@@ -153,6 +157,27 @@ test('wechat XLSX sheet supports shared strings and rejects future or over-range
   assert.equal(parsed.records[0].amountCents, 2850);
   assert.equal(parsed.records[0].categoryId, 'food');
   assert.equal(parsed.skippedOutOfRangeCount, 1);
+});
+
+test('wechat XLSX converts the numeric Excel date format used by official personal bills', () => {
+  assert.equal(
+    parseExcelSerialTimestamp('46243.76736111111'),
+    new Date(2026, 7, 9, 18, 25, 0).getTime()
+  );
+  const shared = '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<si><t>交易时间</t></si><si><t>收/支</t></si><si><t>金额(元)</t></si>'
+    + '<si><t>商品</t></si><si><t>交易单号</t></si><si><t>当前状态</t></si>'
+    + '<si><t>支出</t></si><si><t>午餐订单</t></si>'
+    + '<si><t>4500000000202608090000000001</t></si><si><t>支付成功</t></si></sst>';
+  const sheet = '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+    + '<row r="18"><c r="A18" t="s"><v>0</v></c><c r="B18" t="s"><v>1</v></c><c r="C18" t="s"><v>2</v></c><c r="D18" t="s"><v>3</v></c><c r="E18" t="s"><v>4</v></c><c r="F18" t="s"><v>5</v></c></row>'
+    + '<row r="19"><c r="A19" s="1"><v>46243.76736111111</v></c><c r="B19" t="s"><v>6</v></c><c r="C19"><v>15.8</v></c><c r="D19" t="s"><v>7</v></c><c r="E19" t="s"><v>8</v></c><c r="F19" t="s"><v>9</v></c></row>'
+    + '</sheetData></worksheet>';
+  const parsed = parseWechatBillXlsx(sheet, shared, new Date(2026, 7, 9, 23, 12, 2));
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].occurredAt, new Date(2026, 7, 9, 18, 25).getTime());
+  assert.equal(parsed.records[0].amountCents, 1580);
+  assert.equal(parsed.records[0].note, '午餐订单');
 });
 
 test('acceptance A01 normal calculation', () => {

@@ -156,7 +156,30 @@ function findHeader(rows) {
   throw new Error('没有识别到微信账单表头，请选择解压后的官方账单文件');
 }
 
+function parseExcelSerialTimestamp(value) {
+  const text = String(value || '').trim();
+  if (!/^\d{1,7}(?:\.\d+)?$/.test(text)) return null;
+  const serial = Number(text);
+  if (!Number.isFinite(serial) || serial < 1 || serial >= 2958466) return null;
+  const wholeDays = Math.floor(serial);
+  const adjustedDays = wholeDays >= 60 ? wholeDays - 1 : wholeDays;
+  const fractionMs = Math.round((serial - wholeDays) * 86400000);
+  const utcDate = new Date(
+    Date.UTC(1899, 11, 31) + adjustedDays * 86400000 + fractionMs
+  );
+  return new Date(
+    utcDate.getUTCFullYear(),
+    utcDate.getUTCMonth(),
+    utcDate.getUTCDate(),
+    utcDate.getUTCHours(),
+    utcDate.getUTCMinutes(),
+    utcDate.getUTCSeconds()
+  ).getTime();
+}
+
 function parseLocalTimestamp(value) {
+  const excelTimestamp = parseExcelSerialTimestamp(value);
+  if (excelTimestamp) return excelTimestamp;
   const match = /(\d{4})[-\/]?(\d{1,2})[-\/]?(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(
     String(value || '').replace(/`/g, '').trim()
   );
@@ -296,6 +319,7 @@ function parseWechatBillXlsx(sheetXml, sharedStringsXml, now) {
 
 module.exports = {
   parseDelimitedRows,
+  parseExcelSerialTimestamp,
   parseWechatBillCsv,
   parseWechatBillRows,
   parseWechatBillXlsx,

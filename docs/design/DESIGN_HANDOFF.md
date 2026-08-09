@@ -9,7 +9,7 @@
 - Figma 可编辑稿：[今天还能花 V2｜原创插画记账页](https://www.figma.com/design/IvhaEfmEubegbJT66jgkgC?node-id=7-3)
 - Figma 节点：\`7:3\`（375 × 1366）
 - Figma 本地快照：\`docs/design/figma-preview.png\`（375 × 1366）
-- 原创主视觉：\`assets/images/spending-journey-hero-v2.png\`
+- 原创主视觉：\`assets/images/spending-journey-hero-v2.jpg\`
 - UI 规范：\`design-system/default/MASTER.md\`
 - 首页覆盖规则：\`design-system/default/pages/home.md\`
 
@@ -42,9 +42,9 @@ V1.3 位于独立 Figma Section `25:2`，继续保留 V2 原创插画与视觉�
 
 ## 图片来源
 
-主视觉由 GPT 图像生成能力根据本产品提示词原创生成，内容为咖啡、交通、购物、收据和硬币组成的日常消费路径。原图先上传到 Figma 用于裁切、排版和叠加动态金额；Figma 本身不负责生成这张图片。仓库运行资产压缩为 1024 × 683、约 540 KB 的 PNG，视觉内容不变，避免单张原图挤占微信小程序主包。
+主视觉由 GPT 图像生成能力根据本产品提示词原创生成，内容为咖啡、交通、购物、收据和硬币组成的日常消费路径。原图先上传到 Figma 用于裁切、排版和叠加动态金额；Figma 本身不负责生成这张图片。仓库运行资产压缩为 1024 × 683、约 148 KB 的渐进式 JPEG；设计快照保留在仓库但不进入微信主包。
 
-图片不含文字、品牌、水印、人物身份或用户消费明细。小程序运行时使用仓库内 PNG，不依赖短期 Figma 资源链接。
+图片不含文字、品牌、水印、人物身份或用户消费明细。小程序运行时使用仓库内 JPEG，不依赖短期 Figma 资源链接。
 
 ## 工具选择
 

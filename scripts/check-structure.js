@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
+const heroPath = 'assets/images/spending-journey-hero-v2.jpg';
 const required = [
   'app.js',
   'app.json',
@@ -16,7 +17,7 @@ const required = [
   'domain/theme.js',
   'services/spending-summary.js',
   'services/theme-store.js',
-  'assets/images/spending-journey-hero-v2.png',
+  heroPath,
   'README.md'
 ];
 
@@ -28,8 +29,37 @@ function check(condition, message) {
 
 required.forEach((file) => check(fs.existsSync(path.join(root, file)), `存在 ${file}`));
 check(
-  fs.statSync(path.join(root, 'assets/images/spending-journey-hero-v2.png')).size < 1000000,
-  '运行主图小于 1 MB'
+  fs.statSync(path.join(root, heroPath)).size < 200 * 1024,
+  '运行主图小于 200 KB'
+);
+
+function totalBytes(target) {
+  const stat = fs.statSync(target);
+  if (stat.isFile()) return stat.size;
+  return fs.readdirSync(target)
+    .reduce((sum, name) => sum + totalBytes(path.join(target, name)), 0);
+}
+
+const runtimeEntries = [
+  'app.js', 'app.json', 'app.wxss', 'sitemap.json',
+  'assets', 'domain', 'infrastructure', 'pages', 'services'
+];
+const estimatedMainPackageBytes = runtimeEntries
+  .reduce((sum, entry) => sum + totalBytes(path.join(root, entry)), 0);
+check(estimatedMainPackageBytes < 1.5 * 1024 * 1024, '运行主包原始文件小于 1.5 MB');
+
+const projectConfig = JSON.parse(
+  fs.readFileSync(path.join(root, 'project.config.json'), 'utf8')
+);
+const ignoredPackageFolders = new Set(
+  (projectConfig.packOptions && projectConfig.packOptions.ignore || [])
+    .filter((item) => item.type === 'folder')
+    .map((item) => item.value)
+);
+check(
+  ['design-system', 'docs', 'scripts', 'specs', 'tests']
+    .every((folder) => ignoredPackageFolders.has(folder)),
+  '设计稿、文档、脚本、规格和测试不进入微信主包'
 );
 
 const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));

@@ -14,5 +14,42 @@
     "coverView": true,
     "ignoreUploadUnusedFiles": true
   },
-  "condition": {}
+  "condition": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "design-system"
+      },
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "folder",
+        "value": "scripts"
+      },
+      {
+        "type": "folder",
+        "value": "specs"
+      },
+      {
+        "type": "folder",
+        "value": "tests"
+      },
+      {
+        "type": "file",
+        "value": "AGENTS.md"
+      },
+      {
+        "type": "file",
+        "value": "Agent.md"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      }
+    ],
+    "include": []
+  }
 }

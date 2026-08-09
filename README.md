@@ -12,7 +12,7 @@
 
 本项目不需要安装依赖，也没有构建命令。
 
-当前项目目录（排除 `.git`）约 947 KB，其中运行主图约 540 KB，已避免原始大图单独挤占主包；实际上传体积以开发者工具报告为准。
+运行主图为 1024 × 683、约 148 KB 的渐进式 JPEG。`docs`、`design-system`、`specs`、`tests` 和 `scripts` 通过 `packOptions.ignore` 保留在 Git 仓库但不进入微信主包；本地结构检查同时限制单张运行图小于 200 KB、运行主包原始文件小于 1.5 MB。最终上传体积以开发者工具报告为准。
 
 ## 项目结构
 
@@ -27,7 +27,7 @@ services/spending-summary.js  日/月/年真实本地记录聚合
 services/theme-store.js       主题预设与安全微调持久化
 services/analytics.js         隐私过滤后的统一 trackEvent
 tests/                        Node 自动化测试
-scripts/check-structure.js    单页、存储边界与分享静态检查
+scripts/check-structure.js    单页、存储边界、分享与主包体积静态检查
 docs/PRD.md                   产品需求文档
 specs/001-today-can-spend/    SDD 规格、计划、任务与验收矩阵
 design-system/                UI 设计系统与首页覆盖规则
@@ -89,3 +89,5 @@ node scripts/check-structure.js
 ```
 
 自动化覆盖金额解析、核心计算/日期/存储场景、分类与用途校验、schema 1/2 迁移、交易幂等、跨月归档、历史纠错、跨日/跨月/跨年导入样本、日/月/年聚合、主题持久化与对比度。微信分享面板、系统弹窗、数字键盘、用途输入、安全区、CSS 变量兼容性以及真机视觉仍需在微信开发者工具或真机验证；最终验收状态见 `specs/001-today-can-spend/acceptance.md`。
+
+开发版本 `1.3.0` 已通过微信开发者工具 CLI 上传，上传包为 251221 字节（245.3 KB）。

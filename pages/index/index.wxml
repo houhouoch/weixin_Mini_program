@@ -34,7 +34,7 @@
     <view class="hero-card hero-card--{{statusTone}}">
       <image
         class="hero-art"
-        src="/assets/images/spending-journey-hero-v2.png"
+        src="/assets/images/spending-journey-hero-v2.jpg"
         mode="aspectFill"
         aria-label="由咖啡、交通、购物和小票组成的日常消费插画"
       />

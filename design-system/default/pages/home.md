@@ -27,7 +27,7 @@
 
 ## 页面规则
 
-- 主图使用 /assets/images/spending-journey-hero-v2.png，aspectFill，文字层由 WXML 独立渲染。
+- 主图使用 /assets/images/spending-journey-hero-v2.jpg（1024 × 683、低于 200 KB），aspectFill，文字层由 WXML 独立渲染。
 - 分类固定两行四列；默认餐饮，保存后保留所选分类，清空用途和金额。
 - 消费回看、记一笔、记录与历史默认分别折叠，互不强制联动；折叠标题要明确显示“展开/收起”，不用仅图标状态。
 - 历史区使用系统日期选择器；空、读取中、读取失败和真实逐笔列表均在展开区内就地反馈。

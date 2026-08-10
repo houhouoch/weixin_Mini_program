@@ -157,6 +157,10 @@ check(
   wxml.includes('class="fixed-expense-add"') && wxml.includes('新增固定支出'),
   '固定支出明细使用清晰的次级新增入口'
 );
+check(
+  wxml.includes('aria-label="移除这项固定支出明细">移除</button>'),
+  '固定支出明细使用单行移除操作'
+);
 check(wxml.includes('本周总结'), '日回看支持周总结');
 check(stateSource.includes("direction: 'expense'"), '旧数据迁移为支出方向');
 check(stateSource.includes('HISTORY_MONTH_LIMIT = 36'), '历史归档设置本地保留上限');
@@ -168,6 +172,10 @@ const wxss = fs.readFileSync(path.join(root, 'pages/index/index.wxss'), 'utf8');
 check(
   /\.fixed-expense-add\s*\{[^}]*min-height:\s*88rpx/.test(wxss),
   '固定支出新增入口满足 88rpx 触控高度'
+);
+check(
+  /\.fixed-expense-row__delete\s*\{[^}]*width:\s*112rpx[^}]*white-space:\s*nowrap/.test(wxss),
+  '固定支出移除操作拥有独立宽度且禁止折行'
 );
 check(wxss.includes('.hero-card--todayOverspent'), '今日超额拥有独立视觉状态');
 check(wxss.includes('@media (prefers-reduced-motion: reduce)'), '动画尊重减少动态效果偏好');

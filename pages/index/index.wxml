@@ -743,7 +743,7 @@
               aria-label="固定支出金额"
             />
           </view>
-          <button class="fixed-expense-row__delete" data-index="{{index}}" bindtap="removeFixedExpenseItem" aria-label="删除这项固定支出">删除</button>
+          <button class="fixed-expense-row__delete" data-index="{{index}}" bindtap="removeFixedExpenseItem" aria-label="移除这项固定支出明细">移除</button>
         </view>
       </view>
 

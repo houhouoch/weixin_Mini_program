@@ -133,12 +133,7 @@ function emptyForm(now) {
     savingGoal: '',
     historicalSpentBeforeTracking: now.getDate() === 1 ? '0.00' : '',
     cycleStartDay: 1,
-    fixedExpenseItems: [],
-    categoryBudgets: CATEGORIES.map((item) => ({
-      categoryId: item.id,
-      label: item.label,
-      amount: ''
-    }))
+    fixedExpenseItems: []
   };
 }
 
@@ -230,7 +225,6 @@ Page({
     backupPreview: null,
     canSaveToDisk: false,
     categories: CATEGORIES,
-    categoryBudgetAlerts: [],
     cycleStartDays: CYCLE_START_DAYS,
     cycleStartDayIndex: 0,
     dateLabel: '',
@@ -432,17 +426,6 @@ Page({
         : amountText.length > 7 ? 'amount-medium' : 'amount-normal',
       budget,
       quickTemplates: (quickTemplates || this.data.quickTemplates).map(toQuickTemplateView),
-      categoryBudgetAlerts: result.categoryBudgetAlerts.map((item) => ({
-        categoryId: item.categoryId,
-        categoryLabel: getCategoryLabel(item.categoryId),
-        limitText: formatCents(item.limitCents),
-        percent: item.percent,
-        spentText: formatCents(item.spentCents),
-        status: item.status,
-        statusText: item.status === 'over'
-          ? `已超出 ¥${formatCents(item.spentCents - item.limitCents)}`
-          : '接近预算'
-      })),
       readMessage: '',
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
@@ -1051,16 +1034,7 @@ Page({
           id: item.id,
           name: item.name,
           amount: centsToInput(item.amountCents)
-        })),
-        categoryBudgets: CATEGORIES.map((category) => {
-          const saved = (budget.categoryBudgets || [])
-            .find((item) => item.categoryId === category.id);
-          return {
-            categoryId: category.id,
-            label: category.label,
-            amount: saved ? centsToInput(saved.limitCents) : ''
-          };
-        })
+        }))
       },
       cycleStartDayIndex: Math.max(0, (budget.cycleStartDay || 1) - 1),
       formErrors: Object.assign({}, EMPTY_ERRORS)
@@ -1197,14 +1171,6 @@ Page({
     });
   },
 
-  handleCategoryBudgetInput(event) {
-    const index = Number(event.currentTarget.dataset.index);
-    if (!Number.isInteger(index)) return;
-    this.setData({
-      [`form.categoryBudgets[${index}].amount`]: event.detail.value
-    });
-  },
-
   validateBudgetForm() {
     const values = {};
     const errors = Object.assign({}, EMPTY_ERRORS);
@@ -1243,22 +1209,6 @@ Page({
       });
     });
     values.categoryBudgets = [];
-    (this.data.form.categoryBudgets || []).forEach((item) => {
-      if (!(item.amount || '').trim()) return;
-      const parsed = parseYuanToCents(item.amount, {
-        allowZero: false,
-        maxCents: BUDGET_FIELD_MAX_CENTS
-      });
-      if (!parsed.ok) {
-        errors.fixedExpense = `${item.label}分类预算金额无效`;
-        valid = false;
-        return;
-      }
-      values.categoryBudgets.push({
-        categoryId: item.categoryId,
-        limitCents: parsed.value
-      });
-    });
     if (valid) {
       const recordedSpentCents = this.data.transactions
         .filter((item) => item.direction !== 'income')

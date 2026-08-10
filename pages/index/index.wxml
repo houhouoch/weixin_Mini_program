@@ -66,16 +66,6 @@
       <text class="budget-rail__income" wx:if="{{result.recordedIncomeText !== '0.00'}}">{{result.periodLabel}}额外收入 +¥{{result.recordedIncomeText}}</text>
     </view>
 
-    <view class="category-alerts" wx:if="{{categoryBudgetAlerts.length}}" aria-label="分类预算提醒">
-      <view class="category-alert category-alert--{{item.status}}" wx:for="{{categoryBudgetAlerts}}" wx:key="categoryId">
-        <view class="category-alert__copy">
-          <text class="category-alert__title">{{item.categoryLabel}} · {{item.statusText}}</text>
-          <text class="category-alert__meta">已用 ¥{{item.spentText}} / 预算 ¥{{item.limitText}}</text>
-        </view>
-        <text class="category-alert__percent">{{item.percent}}%</text>
-      </view>
-    </view>
-
     <view class="review-card collapsible-section {{sections.review ? '' : 'collapsible-section--collapsed'}}">
       <button
         class="section-toggle"
@@ -724,8 +714,11 @@
             <text class="budget-detail-section__title">固定支出明细（可选）</text>
             <text class="field-helper">明细少于总额的部分会归为“其他固定支出”，不会生成流水。</text>
           </view>
-          <button class="inline-add-button" bindtap="addFixedExpenseItem">添加</button>
         </view>
+        <button class="fixed-expense-add" bindtap="addFixedExpenseItem" aria-label="新增一项固定支出明细">
+          <text>新增固定支出</text>
+          <text class="fixed-expense-add__mark">＋</text>
+        </button>
         <view class="fixed-expense-row" wx:for="{{form.fixedExpenseItems}}" wx:key="id" wx:for-index="index">
           <input
             class="fixed-expense-row__name"
@@ -762,21 +755,6 @@
         </view>
         <text class="field-helper">与固定支出合计不能超过固定收入和额外收入。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
-      </view>
-
-      <view class="budget-detail-section category-budget-section">
-        <view class="budget-detail-section__heading">
-          <view>
-            <text class="budget-detail-section__title">分类预算提醒（可选）</text>
-            <text class="field-helper">达到 80% 开始提醒；只作提示，不会重复扣减可用额度。</text>
-          </view>
-        </view>
-        <view class="category-budget-grid">
-          <view class="category-budget-field" wx:for="{{form.categoryBudgets}}" wx:key="categoryId" wx:for-index="index">
-            <text>{{item.label}}</text>
-            <view><text>¥</text><input type="digit" value="{{item.amount}}" data-index="{{index}}" bindinput="handleCategoryBudgetInput" placeholder="不设置" aria-label="{{item.label}}分类预算" /></view>
-          </view>
-        </view>
       </view>
 
       <view class="form-field">

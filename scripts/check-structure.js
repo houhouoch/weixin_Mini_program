@@ -82,6 +82,12 @@ check(
   dateImportMatch && /\bbudgetCycleRange\b/.test(dateImportMatch[1]),
   '预算周期函数从日期领域模块导入'
 );
+check(
+  !pageJs.includes('categoryBudgetAlerts')
+    && !pageJs.includes('handleCategoryBudgetInput')
+    && pageJs.includes('values.categoryBudgets = [];'),
+  '页面移除分类预算交互并在保存时清空兼容字段'
+);
 check(!/wx\.(get|set|remove|clear)Storage/.test(pageJs), '页面层不直接访问微信缓存');
 check(!pageJs.includes('wx.getFileSystemManager'), '页面层不直接访问微信文件系统管理器');
 check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');
@@ -146,7 +152,11 @@ check(stateSource.includes('const SCHEMA_VERSION = 5'), '本地数据使用 sche
 check(wxml.includes('bindchange="handleCycleStartDayChange"'), '设置支持自定义预算周期起始日');
 check(wxml.includes('bindtap="saveCurrentAsTemplate"'), '快速记账支持保存常用模板');
 check(wxml.includes('bindtap="useQuickTemplate"'), '常用模板支持一键记账');
-check(wxml.includes('分类预算提醒（可选）'), '设置支持分类预算提醒');
+check(!wxml.includes('分类预算提醒'), '页面不展示分类预算设置或提醒');
+check(
+  wxml.includes('class="fixed-expense-add"') && wxml.includes('新增固定支出'),
+  '固定支出明细使用清晰的次级新增入口'
+);
 check(wxml.includes('本周总结'), '日回看支持周总结');
 check(stateSource.includes("direction: 'expense'"), '旧数据迁移为支出方向');
 check(stateSource.includes('HISTORY_MONTH_LIMIT = 36'), '历史归档设置本地保留上限');
@@ -155,6 +165,10 @@ const themeSource = fs.readFileSync(path.join(root, 'domain/theme.js'), 'utf8');
 check(!/--theme-(danger|warning)/.test(themeSource), '用户主题不生成 danger/warning 语义变量');
 
 const wxss = fs.readFileSync(path.join(root, 'pages/index/index.wxss'), 'utf8');
+check(
+  /\.fixed-expense-add\s*\{[^}]*min-height:\s*88rpx/.test(wxss),
+  '固定支出新增入口满足 88rpx 触控高度'
+);
 check(wxss.includes('.hero-card--todayOverspent'), '今日超额拥有独立视觉状态');
 check(wxss.includes('@media (prefers-reduced-motion: reduce)'), '动画尊重减少动态效果偏好');
 

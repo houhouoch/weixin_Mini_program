@@ -107,7 +107,7 @@ const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
 check(wxml.includes("reviewPeriod === 'custom'"), '自定义统计只在对应回看模式展示');
 check(wxml.includes('mode="date"') && wxml.includes('reviewRangeStartKey') && wxml.includes('reviewRangeEndKey'), '页面使用原生日期选择器设置统计区间');
 check(wxml.includes('reviewSummary.categoryBreakdown') && wxml.includes('reviewTransactions'), '自定义统计支持分类和逐笔流水下钻');
-check(wxml.includes('本月超支 ¥{{result.monthlyOverspentText}}'), '负数月度余额使用本月超支与绝对值表达');
+check(wxml.includes('{{result.periodLabel}}超支 ¥{{result.monthlyOverspentText}}'), '负数周期余额使用周期超支与绝对值表达');
 check(wxml.includes('open-type="share"'), '好友分享使用 open-type="share"');
 check(wxml.includes('朋友圈 · 右上角'), '提供朋友圈右上角菜单引导');
 check(wxml.includes('这笔花在哪儿'), '记录区先回答消费去向');
@@ -121,7 +121,7 @@ check(
 check(wxml.includes('mode="date"'), '历史回顾使用原生日期选择器');
 check(wxml.includes('修改收支明细'), '页面提供交易修改抽屉');
 check(wxml.includes('data-direction="income"') && wxml.includes('记下收入'), '页面提供额外收入入口');
-check(wxml.includes('本月收入无需重复记录'), '收入入口提示避免重复记录固定收入');
+check(wxml.includes('固定收入无需重复记录'), '收入入口提示避免重复记录固定收入');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');
@@ -135,7 +135,12 @@ check(wxml.includes('最近可撤销的导入') && wxml.includes('handleUndoImpo
 check(wxml.includes('完整数据备份与恢复') && wxml.includes('选择备份文件恢复'), '历史区提供完整本地备份恢复入口');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
-check(stateSource.includes('const SCHEMA_VERSION = 4'), '本地数据使用 schema 4');
+check(stateSource.includes('const SCHEMA_VERSION = 5'), '本地数据使用 schema 5');
+check(wxml.includes('bindchange="handleCycleStartDayChange"'), '设置支持自定义预算周期起始日');
+check(wxml.includes('bindtap="saveCurrentAsTemplate"'), '快速记账支持保存常用模板');
+check(wxml.includes('bindtap="useQuickTemplate"'), '常用模板支持一键记账');
+check(wxml.includes('分类预算提醒（可选）'), '设置支持分类预算提醒');
+check(wxml.includes('本周总结'), '日回看支持周总结');
 check(stateSource.includes("direction: 'expense'"), '旧数据迁移为支出方向');
 check(stateSource.includes('HISTORY_MONTH_LIMIT = 36'), '历史归档设置本地保留上限');
 
@@ -189,7 +194,7 @@ check(fileSystemSource.includes('decodeGb18030'), '支付宝 CSV 兼容 GB18030 
 
 const backupSource = fs.readFileSync(path.join(root, 'services/data-backup.js'), 'utf8');
 check(backupSource.includes("BACKUP_FILE_TYPE = 'today-can-spend-backup'"), '完整备份使用可验证的产品格式标识');
-check(backupSource.includes('isValidState') && backupSource.includes('isValidThemeSettings'), '恢复前校验状态与主题');
+check(backupSource.includes('normalizeState') && backupSource.includes('isValidThemeSettings'), '恢复前校验并迁移状态与主题');
 check(!/openid|unionid|avatar|nickName/i.test(backupSource), '完整备份服务不加入身份字段');
 
 if (failures.length) {

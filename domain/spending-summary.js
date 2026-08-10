@@ -59,7 +59,9 @@ function withBarPercent(items) {
 function monthSource(state, monthKey) {
   if (state.monthKey === monthKey && state.budget) {
     return {
-      baselineCents: state.budget.historicalSpentBeforeTrackingCents,
+      baselineCents: (state.budget.cycleStartDay || 1) === 1
+        ? state.budget.historicalSpentBeforeTrackingCents
+        : 0,
       monthKey,
       tracked: true,
       transactions: state.transactions.filter((item) => item.direction !== 'income')
@@ -117,6 +119,61 @@ function categoryBreakdown(records) {
   })).sort((a, b) => b.amountCents - a.amountCents);
 }
 
+function weeklySummary(records, now) {
+  const weekdayOffset = (now.getDay() + 6) % 7;
+  const currentStart = addDays(now, -weekdayOffset);
+  const previousStart = addDays(currentStart, -7);
+  const previousEnd = addDays(previousStart, weekdayOffset);
+  const currentStartKey = toDateKey(currentStart);
+  const currentEndKey = toDateKey(now);
+  const previousStartKey = toDateKey(previousStart);
+  const previousEndKey = toDateKey(previousEnd);
+  const current = records.filter((item) => {
+    const key = toDateKey(item.occurredAt);
+    return key >= currentStartKey && key <= currentEndKey;
+  });
+  const previous = records.filter((item) => {
+    const key = toDateKey(item.occurredAt);
+    return key >= previousStartKey && key <= previousEndKey;
+  });
+  const currentCents = sumAmounts(current);
+  const previousCents = sumAmounts(previous);
+  const changeCents = currentCents - previousCents;
+  let comparisonText = '上周同期无支出，暂不计算比例';
+  if (previousCents > 0) {
+    const percent = Math.round(Math.abs(changeCents) * 100 / previousCents);
+    comparisonText = changeCents === 0
+      ? '与上周同期持平'
+      : `${changeCents > 0 ? '比上周同期多' : '比上周同期少'} ${percent}%`;
+  }
+  const top = topCategory(current);
+  const currentByCategory = Object.create(null);
+  const previousByCategory = Object.create(null);
+  current.forEach((item) => {
+    currentByCategory[item.categoryId] = (currentByCategory[item.categoryId] || 0) + item.amountCents;
+  });
+  previous.forEach((item) => {
+    previousByCategory[item.categoryId] = (previousByCategory[item.categoryId] || 0) + item.amountCents;
+  });
+  const rising = Object.keys(currentByCategory).map((categoryId) => ({
+    categoryId,
+    increaseCents: currentByCategory[categoryId] - (previousByCategory[categoryId] || 0)
+  })).filter((item) => item.increaseCents > 0)
+    .sort((a, b) => b.increaseCents - a.increaseCents)[0];
+  return {
+    currentText: formatMetric(currentCents),
+    previousText: formatMetric(previousCents),
+    comparisonText,
+    topCategoryText: top
+      ? `${getCategoryLabel(top.categoryId)} ${formatMetric(top.amountCents)}`
+      : '本周暂无支出',
+    risingCategoryText: rising
+      ? `${getCategoryLabel(rising.categoryId)} +${formatMetric(rising.increaseCents)}`
+      : '没有增加项目',
+    scopeText: `${compactDateLabel(currentStart)}–${compactDateLabel(now)} 对比 ${compactDateLabel(previousStart)}–${compactDateLabel(previousEnd)}`
+  };
+}
+
 function summaryShell(period, metrics, chart, insightText, scopeText) {
   return { period, metrics, chart: withBarPercent(chart), insightText, scopeText };
 }
@@ -149,7 +206,9 @@ function deriveDaySummary(state, now) {
   const scope = current.baselineCents > 0
     ? `趋势不含启用前汇总 ${formatMetric(current.baselineCents)}`
     : '趋势仅统计真实逐笔记录';
-  return summaryShell('day', metrics, chart, insight, scope);
+  return Object.assign(summaryShell('day', metrics, chart, insight, scope), {
+    weeklySummary: weeklySummary(all, startOfDay(now))
+  });
 }
 
 function deriveMonthSummary(state, now) {

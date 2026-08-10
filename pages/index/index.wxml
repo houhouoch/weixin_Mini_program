@@ -14,7 +14,7 @@
       wx:if="{{viewState === 'ready'}}"
       class="settings-button"
       bindtap="openSettings"
-      aria-label="修改本月设置"
+      aria-label="修改预算设置"
     >设置</button>
   </view>
 
@@ -55,14 +55,25 @@
     <view class="budget-rail budget-rail--{{statusTone}}">
       <view class="budget-rail__labels">
         <text>今天已花 ¥{{result.todaySpentText}}</text>
-        <text wx:if="{{result.monthlyRemainingNegative}}">本月超支 ¥{{result.monthlyOverspentText}}</text>
-        <text wx:else>本月可用 ¥{{result.monthlyRemainingText}}</text>
+        <text wx:if="{{result.monthlyRemainingNegative}}">{{result.periodLabel}}超支 ¥{{result.monthlyOverspentText}}</text>
+        <text wx:else>{{result.periodLabel}}可用 ¥{{result.monthlyRemainingText}}</text>
       </view>
       <view class="budget-rail__track">
         <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
       </view>
       <text class="budget-rail__helper">建议额度 ¥{{result.todaySuggestedBudgetText}} · {{result.statusText}}</text>
-      <text class="budget-rail__income" wx:if="{{result.recordedIncomeText !== '0.00'}}">本月额外收入 +¥{{result.recordedIncomeText}}</text>
+      <text class="budget-rail__cycle" wx:if="{{result.periodLabel === '本周期'}}">预算周期 {{result.cycleRangeText}}</text>
+      <text class="budget-rail__income" wx:if="{{result.recordedIncomeText !== '0.00'}}">{{result.periodLabel}}额外收入 +¥{{result.recordedIncomeText}}</text>
+    </view>
+
+    <view class="category-alerts" wx:if="{{categoryBudgetAlerts.length}}" aria-label="分类预算提醒">
+      <view class="category-alert category-alert--{{item.status}}" wx:for="{{categoryBudgetAlerts}}" wx:key="categoryId">
+        <view class="category-alert__copy">
+          <text class="category-alert__title">{{item.categoryLabel}} · {{item.statusText}}</text>
+          <text class="category-alert__meta">已用 ¥{{item.spentText}} / 预算 ¥{{item.limitText}}</text>
+        </view>
+        <text class="category-alert__percent">{{item.percent}}%</text>
+      </view>
     </view>
 
     <view class="review-card collapsible-section {{sections.review ? '' : 'collapsible-section--collapsed'}}">
@@ -132,6 +143,22 @@
             <view class="review-metric" wx:for="{{reviewSummary.metrics}}" wx:key="label">
               <text class="review-metric__label">{{item.label}}</text>
               <text class="review-metric__value">{{item.value}}</text>
+            </view>
+          </view>
+
+          <view class="weekly-summary" wx:if="{{reviewPeriod === 'day' && reviewSummary.weeklySummary}}">
+            <view class="weekly-summary__heading">
+              <text class="weekly-summary__title">本周总结</text>
+              <text class="weekly-summary__scope">{{reviewSummary.weeklySummary.scopeText}}</text>
+            </view>
+            <view class="weekly-summary__totals">
+              <view><text>本周</text><text>{{reviewSummary.weeklySummary.currentText}}</text></view>
+              <view><text>上周同期</text><text>{{reviewSummary.weeklySummary.previousText}}</text></view>
+            </view>
+            <text class="weekly-summary__comparison">{{reviewSummary.weeklySummary.comparisonText}}</text>
+            <view class="weekly-summary__insights">
+              <text>主要分类：{{reviewSummary.weeklySummary.topCategoryText}}</text>
+              <text>增加最多：{{reviewSummary.weeklySummary.risingCategoryText}}</text>
             </view>
           </view>
 
@@ -249,7 +276,30 @@
           >收入</button>
         </view>
         <text class="composer-copy" wx:if="{{recordDirection === 'expense'}}">这笔花在哪儿？先选分类，再补一句用途；不想写也可以直接记。</text>
-        <text class="composer-copy" wx:else>记录外快、奖金等额外收入；设置中的本月收入无需重复记录。</text>
+        <text class="composer-copy" wx:else>记录外快、奖金等额外收入；设置中的固定收入无需重复记录。</text>
+
+        <view class="quick-templates" wx:if="{{quickTemplates.length}}">
+          <view class="quick-templates__heading">
+            <text>常用模板</text>
+            <text>点一下直接记在现在</text>
+          </view>
+          <view class="quick-template" wx:for="{{quickTemplates}}" wx:key="id">
+            <button
+              class="quick-template__use"
+              data-id="{{item.id}}"
+              bindtap="useQuickTemplate"
+              disabled="{{isSaving}}"
+              aria-label="使用{{item.title}}{{item.amountText}}元模板记账"
+            >
+              <view>
+                <text class="quick-template__title">{{item.title}}</text>
+                <text class="quick-template__meta">{{item.direction === 'income' ? '收入' : '支出'}} · {{item.categoryLabel}}</text>
+              </view>
+              <text class="quick-template__amount">¥{{item.amountText}}</text>
+            </button>
+            <button class="quick-template__delete" data-id="{{item.id}}" bindtap="deleteQuickTemplate" aria-label="删除{{item.title}}模板">删除</button>
+          </view>
+        </view>
 
       <view class="category-grid" role="list">
         <button
@@ -294,6 +344,11 @@
           loading="{{isSaving}}"
         >{{isSaving ? '保存中…' : (recordDirection === 'income' ? '记下收入' : '记下支出')}}</button>
       </view>
+        <button
+          class="template-save-button"
+          bindtap="saveCurrentAsTemplate"
+          disabled="{{isSaving || isTemplateSaving}}"
+        >{{isTemplateSaving ? '正在保存模板…' : '把当前内容保存为常用模板'}}</button>
         <view class="composer-feedback" wx:if="{{inputError || feedback}}">
           <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
           <text class="field-success" aria-role="status" wx:if="{{feedback}}">{{feedback}}</text>
@@ -617,8 +672,8 @@
     <view class="drawer-handle"></view>
     <view class="drawer-header">
       <view>
-        <text class="drawer-eyebrow">{{drawerMode === 'first' ? '先把本月的边界说清楚' : '调整后立即重新计算'}}</text>
-        <text class="drawer-title">{{drawerMode === 'first' ? '设置本月预算' : '修改本月设置'}}</text>
+        <text class="drawer-eyebrow">{{drawerMode === 'first' ? '先把预算周期的边界说清楚' : '调整后立即重新计算'}}</text>
+        <text class="drawer-title">{{drawerMode === 'first' ? '设置预算周期' : '修改预算设置'}}</text>
       </view>
       <button
         wx:if="{{drawerMode === 'edit'}}"
@@ -630,39 +685,105 @@
 
     <scroll-view class="drawer-scroll" scroll-y="true">
       <view class="form-field">
-        <text class="field-label">本月收入</text>
+        <text class="field-label">预算周期从几号开始</text>
+        <picker
+          mode="selector"
+          range="{{cycleStartDays}}"
+          range-key="label"
+          value="{{cycleStartDayIndex}}"
+          bindchange="handleCycleStartDayChange"
+          aria-label="选择每月预算周期起始日"
+        >
+          <view class="selector-field">{{cycleStartDays[cycleStartDayIndex].label}} · 更换</view>
+        </picker>
+        <text class="field-helper">例如 15 日表示本月 15 日至下月 14 日；月报仍按自然月。</text>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">每个预算周期的固定收入</text>
         <view class="form-input {{formErrors.income ? 'form-input--error' : ''}}">
           <text>¥</text>
-          <input type="digit" value="{{form.income}}" data-field="income" bindinput="handleFormInput" placeholder="例如 8000" aria-label="本月收入" />
+          <input type="digit" value="{{form.income}}" data-field="income" bindinput="handleFormInput" placeholder="例如 8000" aria-label="预算周期固定收入" />
         </view>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.income}}">{{formErrors.income}}</text>
       </view>
 
       <view class="form-field">
-        <text class="field-label">本月固定支出</text>
+        <text class="field-label">每个预算周期的固定支出</text>
         <view class="form-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}">
           <text>¥</text>
-          <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="本月固定支出" />
+          <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="预算周期固定支出" />
         </view>
         <text class="field-helper">不包含日常吃饭、交通和购物。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.fixedExpense}}">{{formErrors.fixedExpense}}</text>
       </view>
 
-      <view class="form-field">
-        <text class="field-label">本月想存下的钱</text>
-        <view class="form-input {{formErrors.savingGoal ? 'form-input--error' : ''}}">
-          <text>¥</text>
-          <input type="digit" value="{{form.savingGoal}}" data-field="savingGoal" bindinput="handleFormInput" placeholder="例如 1000" aria-label="本月想存下的钱" />
+      <view class="budget-detail-section">
+        <view class="budget-detail-section__heading">
+          <view>
+            <text class="budget-detail-section__title">固定支出明细（可选）</text>
+            <text class="field-helper">明细少于总额的部分会归为“其他固定支出”，不会生成流水。</text>
+          </view>
+          <button class="inline-add-button" bindtap="addFixedExpenseItem">添加</button>
         </view>
-        <text class="field-helper">与固定支出合计不能超过本月收入。</text>
-        <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
+        <view class="fixed-expense-row" wx:for="{{form.fixedExpenseItems}}" wx:key="id" wx:for-index="index">
+          <input
+            class="fixed-expense-row__name"
+            type="text"
+            maxlength="12"
+            value="{{item.name}}"
+            data-index="{{index}}"
+            data-field="name"
+            bindinput="handleFixedExpenseItemInput"
+            placeholder="例如：房租"
+            aria-label="固定支出名称"
+          />
+          <view class="fixed-expense-row__amount">
+            <text>¥</text>
+            <input
+              type="digit"
+              value="{{item.amount}}"
+              data-index="{{index}}"
+              data-field="amount"
+              bindinput="handleFixedExpenseItemInput"
+              placeholder="0.00"
+              aria-label="固定支出金额"
+            />
+          </view>
+          <button class="fixed-expense-row__delete" data-index="{{index}}" bindtap="removeFixedExpenseItem" aria-label="删除这项固定支出">删除</button>
+        </view>
       </view>
 
       <view class="form-field">
-        <text class="field-label">开始使用前，本月已经花掉的日常消费</text>
+        <text class="field-label">每个预算周期想存下的钱</text>
+        <view class="form-input {{formErrors.savingGoal ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.savingGoal}}" data-field="savingGoal" bindinput="handleFormInput" placeholder="例如 1000" aria-label="预算周期想存下的钱" />
+        </view>
+        <text class="field-helper">与固定支出合计不能超过固定收入和额外收入。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
+      </view>
+
+      <view class="budget-detail-section category-budget-section">
+        <view class="budget-detail-section__heading">
+          <view>
+            <text class="budget-detail-section__title">分类预算提醒（可选）</text>
+            <text class="field-helper">达到 80% 开始提醒；只作提示，不会重复扣减可用额度。</text>
+          </view>
+        </view>
+        <view class="category-budget-grid">
+          <view class="category-budget-field" wx:for="{{form.categoryBudgets}}" wx:key="categoryId" wx:for-index="index">
+            <text>{{item.label}}</text>
+            <view><text>¥</text><input type="digit" value="{{item.amount}}" data-index="{{index}}" bindinput="handleCategoryBudgetInput" placeholder="不设置" aria-label="{{item.label}}分类预算" /></view>
+          </view>
+        </view>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">开始使用前，本周期已经花掉的日常消费</text>
         <view class="form-input {{formErrors.historicalSpentBeforeTracking ? 'form-input--error' : ''}}">
           <text>¥</text>
-          <input type="digit" value="{{form.historicalSpentBeforeTracking}}" data-field="historicalSpentBeforeTracking" bindinput="handleFormInput" placeholder="从本月 1 日到昨天" aria-label="开始使用前已经花掉的日常消费" />
+          <input type="digit" value="{{form.historicalSpentBeforeTracking}}" data-field="historicalSpentBeforeTracking" bindinput="handleFormInput" placeholder="从周期开始到昨天" aria-label="开始使用前已经花掉的日常消费" />
         </view>
         <text class="field-helper">这里只填启用前日常消费；它与固定支出、已记录消费合计不能超过收入。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.historicalSpentBeforeTracking}}">{{formErrors.historicalSpentBeforeTracking}}</text>
@@ -689,7 +810,7 @@
       >{{isBudgetSaving ? '保存中…' : '保存并查看结果'}}</button>
 
       <button
-        wx:if="{{drawerMode === 'edit'}}"
+        wx:if="{{drawerMode === 'edit' && budget.cycleStartDay === 1}}"
         class="reset-button"
         bindtap="resetCurrentMonth"
       >重置本月数据</button>

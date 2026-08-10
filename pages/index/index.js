@@ -1,5 +1,6 @@
 const { deriveBudget, validateBudgetAmounts } = require('../../domain/budget');
 const {
+  budgetCycleRange,
   CATEGORIES,
   categoriesForDirection,
   getCategoryLabel
@@ -33,6 +34,11 @@ const { previewBill } = require('../../services/wechat-bill-import');
 const themeStore = require('../../services/theme-store');
 const { addTransaction, listTransactions } = require('../../services/transactions');
 const {
+  deleteQuickTemplate,
+  listQuickTemplates,
+  saveQuickTemplate
+} = require('../../services/quick-templates');
+const {
   DEFAULT_THEME_SETTINGS,
   getThemePresets,
   resolveTheme
@@ -44,6 +50,11 @@ const EMPTY_ERRORS = {
   savingGoal: '',
   historicalSpentBeforeTracking: ''
 };
+
+const CYCLE_START_DAYS = Object.freeze(Array.from({ length: 28 }, (_, index) => ({
+  label: `每月 ${index + 1} 日`,
+  value: index + 1
+})));
 
 const FIELD_CONFIG = {
   income: 'incomeCents',
@@ -57,24 +68,25 @@ function commandId(prefix) {
 }
 
 function statusPresentation(result, spentProgressPercent) {
+  const periodLabel = result.cycleLabel || '本月';
   if (result.status === 'budgetUnavailable') {
     return {
-      eyebrow: '本月暂无可用额度',
+      eyebrow: `${periodLabel}暂无可用额度`,
       amountText: '¥0.00',
       statusLine1: '固定支出和储蓄目标',
-      statusLine2: '已用完本月收入',
+      statusLine2: `已用完${periodLabel}收入`,
       badge: '调整设置',
-      railText: '本月没有可分配额度'
+      railText: `${periodLabel}没有可分配额度`
     };
   }
   if (result.status === 'monthOverspent') {
     return {
-      eyebrow: '本月已超出',
+      eyebrow: `${periodLabel}已超出`,
       amountText: `已超 ¥${formatCents(result.statusAmountCents)}`,
-      statusLine1: '本月预算已经用完',
+      statusLine1: `${periodLabel}预算已经用完`,
       statusLine2: '先暂停非必要消费',
-      badge: '本月预警',
-      railText: `本月已超 ¥${formatCents(result.statusAmountCents)}`
+      badge: `${periodLabel}预警`,
+      railText: `${periodLabel}已超 ¥${formatCents(result.statusAmountCents)}`
     };
   }
   if (result.status === 'todayOverspent') {
@@ -119,8 +131,39 @@ function emptyForm(now) {
     income: '',
     fixedExpense: '',
     savingGoal: '',
-    historicalSpentBeforeTracking: now.getDate() === 1 ? '0.00' : ''
+    historicalSpentBeforeTracking: now.getDate() === 1 ? '0.00' : '',
+    cycleStartDay: 1,
+    fixedExpenseItems: [],
+    categoryBudgets: CATEGORIES.map((item) => ({
+      categoryId: item.id,
+      label: item.label,
+      amount: ''
+    }))
   };
+}
+
+function cycleRangeText(startKey, endKey) {
+  const compact = (key) => {
+    const date = parseLocalDateKey(key);
+    return date ? `${date.getMonth() + 1}月${date.getDate()}日` : key;
+  };
+  return `${compact(startKey)}–${compact(endKey)}`;
+}
+
+function toQuickTemplateView(item) {
+  return Object.assign({}, item, {
+    amountText: formatCents(item.amountCents),
+    categoryLabel: getCategoryLabel(item.categoryId),
+    title: item.note || getCategoryLabel(item.categoryId)
+  });
+}
+
+async function loadCycleTransactions(budget, now) {
+  const cycle = budgetCycleRange(budget.cycleStartDay || 1, now);
+  return listTransactions({
+    startDateKey: cycle.startDateKey,
+    endDateKey: cycle.endDateKey
+  });
 }
 
 function formatHistoryDate(dateKey) {
@@ -187,6 +230,9 @@ Page({
     backupPreview: null,
     canSaveToDisk: false,
     categories: CATEGORIES,
+    categoryBudgetAlerts: [],
+    cycleStartDays: CYCLE_START_DAYS,
+    cycleStartDayIndex: 0,
     dateLabel: '',
     drawerMode: 'first',
     drawerVisible: false,
@@ -216,6 +262,8 @@ Page({
     isBackingUp: false,
     isExporting: false,
     isSaving: false,
+    isTemplateSaving: false,
+    quickTemplates: [],
     isRestoringBackup: false,
     noteInput: '',
     recordDirection: 'expense',
@@ -313,6 +361,7 @@ Page({
           drawerMode: 'first',
           drawerVisible: true,
           form: emptyForm(now),
+          cycleStartDayIndex: 0,
           formErrors: Object.assign({}, EMPTY_ERRORS),
           readMessage: context.status === 'corrupt'
             ? '本地数据无法识别，已安全回到首次设置。'
@@ -325,8 +374,11 @@ Page({
         return;
       }
 
-      const transactions = await listTransactions();
-      await this.renderReady(context.budget, transactions, now);
+      const readyData = await Promise.all([
+        loadCycleTransactions(context.budget, now),
+        listQuickTemplates()
+      ]);
+      await this.renderReady(context.budget, readyData[0], now, readyData[1]);
     } catch (error) {
       console.error('读取本地数据失败', error);
       this.setData({
@@ -361,11 +413,11 @@ Page({
     });
   },
 
-  async renderReady(budget, transactions, now) {
+  async renderReady(budget, transactions, now, quickTemplates) {
     const result = deriveBudget(budget, transactions, now);
     const persona = personaForStatus(result.status);
     const useDays = daysSince(budget.trackingStartDate, now);
-    const shareTitle = `${persona}｜打卡${useDays}天｜${transactions.length}笔｜本月已花¥${formatCents(result.totalSpentCents)}`;
+    const shareTitle = `${persona}｜打卡${useDays}天｜${transactions.length}笔｜${result.cycleLabel}已花¥${formatCents(result.totalSpentCents)}`;
     const spentProgressPercent = result.todaySuggestedBudgetCents > 0
       ? Math.min(100, Math.round(
         result.todaySpentCents * 100 / result.todaySuggestedBudgetCents
@@ -379,11 +431,25 @@ Page({
         ? 'amount-small'
         : amountText.length > 7 ? 'amount-medium' : 'amount-normal',
       budget,
+      quickTemplates: (quickTemplates || this.data.quickTemplates).map(toQuickTemplateView),
+      categoryBudgetAlerts: result.categoryBudgetAlerts.map((item) => ({
+        categoryId: item.categoryId,
+        categoryLabel: getCategoryLabel(item.categoryId),
+        limitText: formatCents(item.limitCents),
+        percent: item.percent,
+        spentText: formatCents(item.spentCents),
+        status: item.status,
+        statusText: item.status === 'over'
+          ? `已超出 ¥${formatCents(item.spentCents - item.limitCents)}`
+          : '接近预算'
+      })),
       readMessage: '',
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
         monthlyOverspentText: formatCents(Math.abs(result.monthlyRemainingCents)),
+        periodLabel: result.cycleLabel,
+        cycleRangeText: cycleRangeText(result.cycleStartDateKey, result.cycleEndDateKey),
         recordedIncomeText: formatCents(result.recordedIncomeCents),
         persona,
         heroAmountText: presentation.amountText,
@@ -678,7 +744,7 @@ Page({
         feedback: result.duplicate
           ? '这笔记录已经保存过了。'
           : direction === 'income'
-            ? '已记下，额外收入已加入本月可用额度。'
+            ? `已记下，额外收入已加入${this.data.result.periodLabel}可用额度。`
             : '已记下，今日额度已更新。'
       });
       wx.hideKeyboard();
@@ -694,6 +760,96 @@ Page({
       this._transactionInFlight = false;
       this.setData({ isSaving: false });
     }
+  },
+
+  async saveCurrentAsTemplate() {
+    if (this.data.isTemplateSaving) return;
+    const parsed = parseYuanToCents(this.data.amountInput, {
+      allowZero: false,
+      maxCents: TRANSACTION_MAX_CENTS
+    });
+    if (!parsed.ok) {
+      this.setData({ inputError: parsed.error, feedback: '' });
+      return;
+    }
+    this.setData({ isTemplateSaving: true, inputError: '', feedback: '' });
+    try {
+      await saveQuickTemplate({
+        id: commandId('template'),
+        amountCents: parsed.value,
+        categoryId: this.data.selectedCategoryId,
+        direction: this.data.recordDirection,
+        note: this.data.noteInput
+      });
+      const quickTemplates = await listQuickTemplates();
+      this.setData({
+        quickTemplates: quickTemplates.map(toQuickTemplateView),
+        feedback: '已保存为常用模板。'
+      });
+    } catch (error) {
+      this.setData({ inputError: error.message || '模板保存失败，请重试', feedback: '' });
+    } finally {
+      this.setData({ isTemplateSaving: false });
+    }
+  },
+
+  async useQuickTemplate(event) {
+    if (this._transactionInFlight || this.data.isSaving) return;
+    const template = this.data.quickTemplates
+      .find((item) => item.id === event.currentTarget.dataset.id);
+    if (!template) return;
+    this._transactionInFlight = true;
+    this.setData({ isSaving: true, inputError: '', feedback: '' });
+    try {
+      const result = await addTransaction({
+        action: 'create',
+        amountCents: template.amountCents,
+        categoryId: template.categoryId,
+        commandId: commandId('template-create'),
+        direction: template.direction,
+        note: template.note,
+        occurredAt: Date.now()
+      });
+      this.setData({
+        feedback: result.duplicate ? '这笔记录已经保存过了。' : `已用“${template.title}”记一笔。`
+      });
+      await this.refreshAfterMutation();
+      trackEvent('transaction_saved', {
+        direction: template.direction,
+        entry: 'quick_template',
+        result: result.duplicate ? 'duplicate' : 'success'
+      });
+    } catch (error) {
+      this.setData({ inputError: '模板记账失败，请重试', feedback: '' });
+    } finally {
+      this._transactionInFlight = false;
+      this.setData({ isSaving: false });
+    }
+  },
+
+  deleteQuickTemplate(event) {
+    const template = this.data.quickTemplates
+      .find((item) => item.id === event.currentTarget.dataset.id);
+    if (!template) return;
+    wx.showModal({
+      title: '删除常用模板',
+      content: `删除“${template.title} ¥${template.amountText}”模板？已有流水不会受影响。`,
+      confirmText: '删除',
+      confirmColor: '#C84F4A',
+      success: async (result) => {
+        if (!result.confirm) return;
+        try {
+          await deleteQuickTemplate(template.id);
+          const quickTemplates = await listQuickTemplates();
+          this.setData({
+            quickTemplates: quickTemplates.map(toQuickTemplateView),
+            feedback: '常用模板已删除。'
+          });
+        } catch (error) {
+          this.setData({ inputError: '模板删除失败，请重试', feedback: '' });
+        }
+      }
+    });
   },
 
   openEditTransaction(event) {
@@ -819,10 +975,17 @@ Page({
     const amountText = transaction.amountText;
     const categoryLabel = transaction.categoryLabel;
     const purpose = transaction.note ? ` · ${transaction.note}` : '';
-    const isCurrentMonth = toMonthKey(transaction.occurredAt) === toMonthKey(new Date());
+    const cycle = this.data.budget
+      ? budgetCycleRange(this.data.budget.cycleStartDay || 1, new Date())
+      : null;
+    const transactionDateKey = toDateKey(transaction.occurredAt);
+    const isCurrentBudgetCycle = cycle
+      && transactionDateKey >= cycle.startDateKey
+      && transactionDateKey <= cycle.endDateKey;
+    const periodLabel = this.data.result ? this.data.result.periodLabel : '本月';
     const impactText = transaction.direction === 'income'
-      ? (isCurrentMonth ? '本月可用额度会重新计算。' : '对应历史明细会更新。')
-      : (isCurrentMonth ? '今日额度会重新计算。' : '对应历史回看会更新。');
+      ? (isCurrentBudgetCycle ? `${periodLabel}可用额度会重新计算。` : '对应历史明细会更新。')
+      : (isCurrentBudgetCycle ? '今日额度会重新计算。' : '对应历史回看会更新。');
     wx.showModal({
       title: '删除记录',
       content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} ${transaction.directionLabel}记录？${impactText}`,
@@ -849,8 +1012,13 @@ Page({
   async refreshAfterMutation() {
     const now = new Date();
     const context = await budgetStore.loadBudgetContext(now);
-    const transactions = await listTransactions();
-    if (context.status === 'ready') await this.renderReady(context.budget, transactions, now);
+    const readyData = context.status === 'ready' ? await Promise.all([
+      loadCycleTransactions(context.budget, now),
+      listQuickTemplates()
+    ]) : [[], []];
+    if (context.status === 'ready') {
+      await this.renderReady(context.budget, readyData[0], now, readyData[1]);
+    }
     this.setData({ exportError: '', exportFileName: '', exportFilePath: '' });
   },
 
@@ -877,8 +1045,24 @@ Page({
         savingGoal: centsToInput(budget.savingGoalCents),
         historicalSpentBeforeTracking: centsToInput(
           budget.historicalSpentBeforeTrackingCents
-        )
+        ),
+        cycleStartDay: budget.cycleStartDay || 1,
+        fixedExpenseItems: (budget.fixedExpenseItems || []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          amount: centsToInput(item.amountCents)
+        })),
+        categoryBudgets: CATEGORIES.map((category) => {
+          const saved = (budget.categoryBudgets || [])
+            .find((item) => item.categoryId === category.id);
+          return {
+            categoryId: category.id,
+            label: category.label,
+            amount: saved ? centsToInput(saved.limitCents) : ''
+          };
+        })
       },
+      cycleStartDayIndex: Math.max(0, (budget.cycleStartDay || 1) - 1),
       formErrors: Object.assign({}, EMPTY_ERRORS)
     });
   },
@@ -969,6 +1153,58 @@ Page({
     this.setData({ [`form.${field}`]: event.detail.value, formErrors: errors });
   },
 
+  handleCycleStartDayChange(event) {
+    const index = Number(event.detail.value);
+    const option = CYCLE_START_DAYS[index];
+    if (!option) return;
+    this.setData({
+      cycleStartDayIndex: index,
+      'form.cycleStartDay': option.value
+    });
+  },
+
+  addFixedExpenseItem() {
+    if (this.data.form.fixedExpenseItems.length >= 12) {
+      this.setData({ 'formErrors.fixedExpense': '最多添加 12 项固定支出明细' });
+      return;
+    }
+    const fixedExpenseItems = this.data.form.fixedExpenseItems.concat({
+      id: commandId('fixed'),
+      name: '',
+      amount: ''
+    });
+    this.setData({ 'form.fixedExpenseItems': fixedExpenseItems });
+  },
+
+  handleFixedExpenseItemInput(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const field = event.currentTarget.dataset.field;
+    if (!Number.isInteger(index) || (field !== 'name' && field !== 'amount')) return;
+    this.setData({
+      [`form.fixedExpenseItems[${index}].${field}`]: event.detail.value,
+      'formErrors.fixedExpense': ''
+    });
+  },
+
+  removeFixedExpenseItem(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    if (!Number.isInteger(index)) return;
+    const fixedExpenseItems = this.data.form.fixedExpenseItems
+      .filter((_, itemIndex) => itemIndex !== index);
+    this.setData({
+      'form.fixedExpenseItems': fixedExpenseItems,
+      'formErrors.fixedExpense': ''
+    });
+  },
+
+  handleCategoryBudgetInput(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    if (!Number.isInteger(index)) return;
+    this.setData({
+      [`form.categoryBudgets[${index}].amount`]: event.detail.value
+    });
+  },
+
   validateBudgetForm() {
     const values = {};
     const errors = Object.assign({}, EMPTY_ERRORS);
@@ -984,6 +1220,44 @@ Page({
       } else {
         values[FIELD_CONFIG[field]] = parsed.value;
       }
+    });
+    values.cycleStartDay = Number(this.data.form.cycleStartDay) || 1;
+    values.fixedExpenseItems = [];
+    (this.data.form.fixedExpenseItems || []).forEach((item) => {
+      const name = (item.name || '').trim();
+      const amount = (item.amount || '').trim();
+      if (!name && !amount) return;
+      const parsed = parseYuanToCents(amount, {
+        allowZero: false,
+        maxCents: BUDGET_FIELD_MAX_CENTS
+      });
+      if (!name || name.length > 12 || !parsed.ok) {
+        errors.fixedExpense = '请为每项固定支出填写 1–12 字名称和有效金额';
+        valid = false;
+        return;
+      }
+      values.fixedExpenseItems.push({
+        id: item.id || commandId('fixed'),
+        name,
+        amountCents: parsed.value
+      });
+    });
+    values.categoryBudgets = [];
+    (this.data.form.categoryBudgets || []).forEach((item) => {
+      if (!(item.amount || '').trim()) return;
+      const parsed = parseYuanToCents(item.amount, {
+        allowZero: false,
+        maxCents: BUDGET_FIELD_MAX_CENTS
+      });
+      if (!parsed.ok) {
+        errors.fixedExpense = `${item.label}分类预算金额无效`;
+        valid = false;
+        return;
+      }
+      values.categoryBudgets.push({
+        categoryId: item.categoryId,
+        limitCents: parsed.value
+      });
     });
     if (valid) {
       const recordedSpentCents = this.data.transactions
@@ -1025,7 +1299,12 @@ Page({
       wx.showToast({ title: '设置已保存', icon: 'success' });
     } catch (error) {
       console.error('保存设置失败', error);
-      wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+      this.setData({
+        formErrors: Object.assign({}, this.data.formErrors, {
+          income: error.message || '保存失败，请重试'
+        })
+      });
+      wx.showToast({ title: '请检查预算设置', icon: 'none' });
     } finally {
       this._budgetSaveInFlight = false;
       this.setData({ isBudgetSaving: false });
@@ -1048,6 +1327,7 @@ Page({
             drawerMode: 'first',
             drawerVisible: true,
             form: emptyForm(now),
+            cycleStartDayIndex: 0,
             formErrors: Object.assign({}, EMPTY_ERRORS),
             result: null,
             transactions: [],

@@ -11,6 +11,11 @@ const {
 } = require('../services/data-backup');
 const { getSpendingSummary } = require('../services/spending-summary');
 const themeStore = require('../services/theme-store');
+const {
+  deleteQuickTemplate,
+  listQuickTemplates,
+  saveQuickTemplate
+} = require('../services/quick-templates');
 const { readState } = require('../services/state-store');
 const { addTransaction, listTransactions } = require('../services/transactions');
 
@@ -577,11 +582,13 @@ test('legacy schema migrates transactions to other without losing amount or time
     note: '',
     occurredAt
   }]);
-  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 4);
+  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 5);
+  assert.equal(adapter.data.get('today-can-spend:v1').budget.cycleStartDay, 1);
+  assert.deepEqual(adapter.data.get('today-can-spend:v1').quickTemplates, []);
   assert.deepEqual(adapter.data.get('today-can-spend:v1').history, []);
 });
 
-test('schema 2 migrates to schema 4 and marks current records as expenses', async () => {
+test('schema 2 migrates to schema 5 and marks current records as expenses', async () => {
   const adapter = makeAdapter();
   const occurredAt = new Date(2026, 7, 9, 9, 30).getTime();
   adapter.data.set('today-can-spend:v1', {
@@ -610,7 +617,7 @@ test('schema 2 migrates to schema 4 and marks current records as expenses', asyn
   assert.equal(transactions[0].note, '咖啡');
   assert.equal(transactions[0].direction, 'expense');
   const state = adapter.data.get('today-can-spend:v1');
-  assert.equal(state.schemaVersion, 4);
+  assert.equal(state.schemaVersion, 5);
   assert.deepEqual(state.history, []);
 });
 
@@ -721,7 +728,7 @@ test('imported cross-day, cross-month and cross-year data stays in the correct r
   const day = await getSpendingSummary('day', new Date(2026, 7, 9, 12));
   assert.deepEqual(day.metrics.map((item) => item.value), ['¥30', '¥15', '¥0']);
   const migratedState = adapter.data.get('today-can-spend:v1');
-  assert.equal(migratedState.schemaVersion, 4);
+  assert.equal(migratedState.schemaVersion, 5);
   assert.ok(migratedState.transactions.every((item) => item.direction === 'expense'));
   assert.ok(migratedState.history.every((month) =>
     month.transactions.every((item) => item.direction === 'expense')));
@@ -968,6 +975,113 @@ test('transaction allows an empty purpose and keeps the selected category', asyn
   const transactions = await listTransactions();
   assert.equal(transactions[0].categoryId, 'transport');
   assert.equal(transactions[0].note, '');
+});
+
+test('schema 4 migrates to schema 5 with safe budget-cycle defaults', async () => {
+  const adapter = makeAdapter();
+  adapter.data.set('today-can-spend:v1', {
+    schemaVersion: 4,
+    monthKey: '2026-08',
+    budget: {
+      incomeCents: 800000,
+      fixedExpenseCents: 400000,
+      savingGoalCents: 100000,
+      historicalSpentBeforeTrackingCents: 0,
+      trackingStartDate: '2026-08-09'
+    },
+    transactions: [],
+    processedCommandIds: [],
+    history: []
+  });
+  setStorageAdapterForTests(adapter);
+  const context = await budgetStore.loadBudgetContext(new Date(2026, 7, 10));
+  assert.equal(context.status, 'ready');
+  assert.equal(context.budget.cycleStartDay, 1);
+  assert.equal(context.budget.activeCycleStartDate, '2026-08-01');
+  assert.deepEqual(context.budget.fixedExpenseItems, []);
+  assert.deepEqual(context.budget.categoryBudgets, []);
+  assert.deepEqual((await readState()).state.quickTemplates, []);
+});
+
+test('custom budget cycle survives calendar-month archiving and rolls on payday', async () => {
+  const august = new Date(2026, 7, 20, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 5000,
+    cycleStartDay: 15,
+    fixedExpenseItems: [{ id: 'rent', name: '房租', amountCents: 300000 }],
+    categoryBudgets: [{ categoryId: 'food', limitCents: 150000 }]
+  }, august);
+  await addTransaction({
+    action: 'create',
+    commandId: 'cycle-aug-food',
+    amountCents: 80000,
+    categoryId: 'food',
+    occurredAt: august.getTime()
+  });
+
+  const septemberFirst = new Date(2026, 8, 1, 10);
+  const acrossMonth = await budgetStore.loadBudgetContext(septemberFirst);
+  assert.equal(acrossMonth.status, 'ready');
+  assert.equal(acrossMonth.budget.activeCycleStartDate, '2026-08-15');
+  let state = (await readState()).state;
+  assert.equal(state.monthKey, '2026-09');
+  assert.equal(state.history[0].monthKey, '2026-08');
+  assert.equal(state.history[0].historicalSpentBeforeTrackingCents, 0);
+
+  await addTransaction({
+    action: 'create',
+    commandId: 'cycle-sep-food',
+    amountCents: 43000,
+    categoryId: 'food',
+    occurredAt: new Date(2026, 8, 2, 10).getTime()
+  });
+  assert.equal((await listTransactions({
+    startDateKey: '2026-08-15',
+    endDateKey: '2026-09-14'
+  })).length, 2);
+
+  const nextCycle = await budgetStore.loadBudgetContext(new Date(2026, 8, 15, 10));
+  assert.equal(nextCycle.status, 'ready');
+  assert.equal(nextCycle.budget.activeCycleStartDate, '2026-09-15');
+  assert.equal(nextCycle.budget.historicalSpentBeforeTrackingCents, 0);
+  assert.deepEqual(nextCycle.budget.fixedExpenseItems, [
+    { id: 'rent', name: '房租', amountCents: 300000 }
+  ]);
+  state = (await readState()).state;
+  assert.equal(state.transactions.length, 1);
+});
+
+test('quick templates persist, enforce the eight-item limit and can be deleted', async () => {
+  const now = new Date(2026, 7, 10, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  for (let index = 0; index < 8; index += 1) {
+    await saveQuickTemplate({
+      id: `template-${index}`,
+      direction: 'expense',
+      categoryId: index % 2 ? 'transport' : 'food',
+      note: index === 0 ? '咖啡' : '',
+      amountCents: 100 + index
+    });
+  }
+  assert.equal((await listQuickTemplates()).length, 8);
+  await assert.rejects(saveQuickTemplate({
+    id: 'template-8',
+    direction: 'expense',
+    categoryId: 'food',
+    note: '第九个',
+    amountCents: 900
+  }), /最多保存 8 个/);
+  assert.equal(await deleteQuickTemplate('template-0'), true);
+  assert.equal((await listQuickTemplates()).length, 7);
+  assert.equal(await deleteQuickTemplate('missing'), false);
 });
 
 test('read and write failures are surfaced instead of pretending success', async () => {

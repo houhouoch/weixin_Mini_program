@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { deriveBudget, validateBudgetAmounts } = require('../domain/budget');
 const {
+  budgetCycleRange,
   daysInMonth,
   daysRemainingIncludingToday,
   daysSince,
@@ -59,7 +60,7 @@ test('budget relations reject impossible saving and spending combinations', () =
     savingGoalCents: 0,
     historicalSpentBeforeTrackingCents: 0
   });
-  assert.match(fixedTooHigh.errors.fixedExpense, /不能超过本月收入/);
+  assert.match(fixedTooHigh.errors.fixedExpense, /不能超过固定收入/);
 
   const historicalTooHigh = validateBudgetAmounts({
     incomeCents: 800000,
@@ -76,6 +77,19 @@ test('budget relations reject impossible saving and spending combinations', () =
     historicalSpentBeforeTrackingCents: 250000
   }, 100000);
   assert.equal(valid.valid, true);
+
+  const fixedDetailsTooHigh = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0,
+    cycleStartDay: 15,
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 390000 },
+      { id: 'phone', name: '话费', amountCents: 20000 }
+    ]
+  });
+  assert.match(fixedDetailsTooHigh.errors.fixedExpense, /不能超过 ¥4000\.00/);
 });
 
 test('ledger export creates a real xlsx zip with readable local transaction fields', () => {
@@ -311,6 +325,40 @@ test('date rules handle leap years, month end and usage days', () => {
   assert.equal(daysRemainingIncludingToday(new Date(2026, 3, 30)), 1);
   assert.equal(toDateKey(new Date(2026, 0, 2)), '2026-01-02');
   assert.equal(daysSince('2026-04-20', new Date(2026, 3, 22)), 3);
+
+  const beforePayday = budgetCycleRange(15, new Date(2026, 7, 10, 12));
+  assert.equal(beforePayday.startDateKey, '2026-07-15');
+  assert.equal(beforePayday.endDateKey, '2026-08-14');
+  assert.equal(beforePayday.daysRemainingIncludingToday, 5);
+  const afterPayday = budgetCycleRange(15, new Date(2026, 7, 20, 12));
+  assert.equal(afterPayday.startDateKey, '2026-08-15');
+  assert.equal(afterPayday.endDateKey, '2026-09-14');
+});
+
+test('custom cycle aggregates across calendar months and raises category budget alerts once', () => {
+  const now = new Date(2026, 8, 10, 12);
+  const result = deriveBudget(budget({
+    historicalSpentBeforeTrackingCents: 0,
+    cycleStartDay: 15,
+    activeCycleStartDate: '2026-08-15',
+    fixedExpenseItems: [],
+    categoryBudgets: [{ categoryId: 'food', limitCents: 150000 }]
+  }), [
+    { id: 'aug', amountCents: 80000, categoryId: 'food', direction: 'expense', occurredAt: new Date(2026, 7, 20).getTime() },
+    { id: 'sep', amountCents: 43000, categoryId: 'food', direction: 'expense', occurredAt: new Date(2026, 8, 2).getTime() },
+    { id: 'old', amountCents: 99999, categoryId: 'food', direction: 'expense', occurredAt: new Date(2026, 7, 14).getTime() }
+  ], now);
+  assert.equal(result.cycleStartDateKey, '2026-08-15');
+  assert.equal(result.cycleEndDateKey, '2026-09-14');
+  assert.equal(result.totalSpentCents, 123000);
+  assert.equal(result.monthlyRemainingCents, 177000);
+  assert.deepEqual(result.categoryBudgetAlerts, [{
+    categoryId: 'food',
+    limitCents: 150000,
+    percent: 82,
+    spentCents: 123000,
+    status: 'near'
+  }]);
 });
 
 test('day and month summaries use only real dated records for trends', () => {
@@ -333,6 +381,8 @@ test('day and month summaries use only real dated records for trends', () => {
   assert.deepEqual(day.metrics.map((item) => item.value), ['¥15', '¥4', '¥0']);
   assert.match(day.insightText, /餐饮 ¥15/);
   assert.match(day.scopeText, /趋势不含启用前汇总 ¥50/);
+  assert.equal(day.weeklySummary.currentText, '¥19');
+  assert.match(day.weeklySummary.scopeText, /8\/3–8\/9/);
 
   const month = deriveSpendingSummary(state, 'month', now);
   assert.equal(month.metrics[0].value, '¥69');

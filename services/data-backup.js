@@ -1,7 +1,7 @@
 const { normalizeThemeSettings } = require('../domain/theme');
 const { readTextFile, writeUserFile } = require('../infrastructure/file-system');
 const themeStore = require('./theme-store');
-const { isValidState, readState, saveState } = require('./state-store');
+const { normalizeState, readState, saveState } = require('./state-store');
 
 const BACKUP_FILE_TYPE = 'today-can-spend-backup';
 const BACKUP_FORMAT_VERSION = 1;
@@ -33,11 +33,13 @@ function parseBackupText(text) {
     || document.formatVersion !== BACKUP_FORMAT_VERSION) {
     throw new Error('这不是“今天还能花”的完整备份文件');
   }
+  const normalizedState = normalizeState(document.state);
   if (!Number.isFinite(Date.parse(document.exportedAt))
-    || !isValidState(document.state)
+    || !normalizedState
     || !isValidThemeSettings(document.themeSettings)) {
     throw new Error('备份内容已损坏或版本不受支持');
   }
+  document.state = normalizedState;
   return document;
 }
 

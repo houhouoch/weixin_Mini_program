@@ -26,6 +26,41 @@ function daysRemainingIncludingToday(value) {
   return Math.max(daysInMonth(date) - date.getDate() + 1, 1);
 }
 
+function addLocalDays(value, amount) {
+  const date = asDate(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount);
+}
+
+function calendarDayDistance(startValue, endValue) {
+  const start = asDate(startValue);
+  const end = asDate(endValue);
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endUtc - startUtc) / 86400000);
+}
+
+function budgetCycleRange(cycleStartDay, value) {
+  const now = asDate(value || Date.now());
+  if (!Number.isInteger(cycleStartDay) || cycleStartDay < 1 || cycleStartDay > 28) {
+    throw new Error('预算周期起始日无效');
+  }
+  const startMonthOffset = now.getDate() >= cycleStartDay ? 0 : -1;
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth() + startMonthOffset,
+    cycleStartDay
+  );
+  const nextStart = new Date(start.getFullYear(), start.getMonth() + 1, cycleStartDay);
+  const end = addLocalDays(nextStart, -1);
+  return {
+    start,
+    end,
+    startDateKey: toDateKey(start),
+    endDateKey: toDateKey(end),
+    daysRemainingIncludingToday: Math.max(calendarDayDistance(now, end) + 1, 1)
+  };
+}
+
 function parseLocalDateKey(dateKey) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey || '');
   if (!match) return null;
@@ -58,6 +93,9 @@ function formatRecordTime(timestamp, now) {
 }
 
 module.exports = {
+  addLocalDays,
+  budgetCycleRange,
+  calendarDayDistance,
   daysInMonth,
   daysRemainingIncludingToday,
   daysSince,

@@ -55,18 +55,21 @@ function assertCommand(command) {
     return;
   }
   if (command.action === 'import') {
-    if (command.source !== 'wechat'
+    if ((command.source !== 'wechat' && command.source !== 'alipay')
       || !Array.isArray(command.transactions)
       || command.transactions.length > IMPORT_MAX_RECORDS) {
-      throw new Error('微信账单导入命令无效');
+      throw new Error('平台账单导入命令无效');
     }
     command.transactions.forEach((transaction) => {
       assertTransactionFields(transaction);
-      if (transaction.direction === 'income') {
+      if (command.source === 'wechat' && transaction.direction === 'income') {
         throw new Error('微信账单导入当前仅支持支出记录');
       }
-      if (typeof transaction.id !== 'string' || !/^wechat-[a-z0-9-]+$/.test(transaction.id)) {
-        throw new Error('微信账单记录标识无效');
+      const idPattern = command.source === 'wechat'
+        ? /^wechat-[a-z0-9-]+$/
+        : /^alipay-[a-z0-9-]+$/;
+      if (typeof transaction.id !== 'string' || !idPattern.test(transaction.id)) {
+        throw new Error('平台账单记录标识无效');
       }
     });
     return;
@@ -178,7 +181,7 @@ function importTransactions(state, records) {
       id: record.id,
       amountCents: record.amountCents,
       categoryId: record.categoryId,
-      direction: 'expense',
+      direction: record.direction === 'income' ? 'income' : 'expense',
       note: (record.note || '').trim(),
       occurredAt: record.occurredAt
     };

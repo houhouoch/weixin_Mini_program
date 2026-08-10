@@ -23,7 +23,9 @@ function fileSystem() {
   return wx.getFileSystemManager();
 }
 
-function readTextFile(filePath) {
+const { decodeGb18030 } = require('../domain/gb18030');
+
+function readBinaryFile(filePath) {
   return new Promise((resolve, reject) => {
     let manager;
     try {
@@ -34,13 +36,68 @@ function readTextFile(filePath) {
     }
     manager.readFile({
       filePath,
-      encoding: 'utf8',
       success: (result) => resolve(result.data),
       fail: (error) => reject(new Error(error && error.errMsg
         ? error.errMsg
         : '账单文件读取失败'))
     });
   });
+}
+
+function toBytes(data) {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView && ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return null;
+}
+
+function isValidUtf8(bytes) {
+  for (let index = 0; index < bytes.length;) {
+    const first = bytes[index];
+    if (first <= 0x7F) {
+      index += 1;
+      continue;
+    }
+    let length = 0;
+    let codePoint = 0;
+    if (first >= 0xC2 && first <= 0xDF) {
+      length = 2;
+      codePoint = first & 0x1F;
+    } else if (first >= 0xE0 && first <= 0xEF) {
+      length = 3;
+      codePoint = first & 0x0F;
+    } else if (first >= 0xF0 && first <= 0xF4) {
+      length = 4;
+      codePoint = first & 0x07;
+    } else {
+      return false;
+    }
+    if (index + length > bytes.length) return false;
+    for (let offset = 1; offset < length; offset += 1) {
+      const continuation = bytes[index + offset];
+      if ((continuation & 0xC0) !== 0x80) return false;
+      codePoint = (codePoint << 6) | (continuation & 0x3F);
+    }
+    if ((length === 3 && codePoint < 0x800)
+      || (length === 4 && codePoint < 0x10000)
+      || (codePoint >= 0xD800 && codePoint <= 0xDFFF)
+      || codePoint > 0x10FFFF) return false;
+    index += length;
+  }
+  return true;
+}
+
+function decodeBillText(data) {
+  if (typeof data === 'string') return data.replace(/^\uFEFF/, '');
+  const bytes = toBytes(data);
+  if (!bytes) return '';
+  return (isValidUtf8(bytes) ? decodeUtf8Data(bytes) : decodeGb18030(bytes))
+    .replace(/^\uFEFF/, '');
+}
+
+async function readTextFile(filePath) {
+  return decodeBillText(await readBinaryFile(filePath));
 }
 
 function decodeUtf8Data(data) {
@@ -130,8 +187,10 @@ function readZipTextEntries(filePath) {
 }
 
 module.exports = {
+  decodeBillText,
   decodeUtf8Data,
   normalizeZipEntries,
+  readBinaryFile,
   readTextFile,
   readZipTextEntries,
   writeUserFile

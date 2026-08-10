@@ -991,6 +991,7 @@
 }
 
 .bill-import__helper,
+.bill-import__rule,
 .bill-import__skipped,
 .bill-import__privacy {
   display: block;
@@ -1059,9 +1060,15 @@
 
 .bill-import__metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12rpx;
   margin-top: 18rpx;
+}
+
+.bill-import__rule {
+  padding-left: 14rpx;
+  border-left: 6rpx solid var(--theme-accent, #F4C247);
+  color: var(--theme-text, #123F35);
 }
 
 .bill-import__metric {

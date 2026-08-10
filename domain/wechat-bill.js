@@ -319,6 +319,7 @@ function parseWechatBillXlsx(sheetXml, sharedStringsXml, now) {
 }
 
 module.exports = {
+  parseLocalTimestamp,
   parseDelimitedRows,
   parseExcelSerialTimestamp,
   parseWechatBillCsv,

@@ -273,13 +273,13 @@
         </view>
         <view class="bill-import">
           <view class="bill-import__copy">
-            <text class="bill-import__eyebrow">WECHAT PAY · 本地导入</text>
-            <text class="bill-import__title">导入微信支付账单</text>
-            <text class="bill-import__helper">先解压微信发送到邮箱的账单压缩包，再把其中 .xlsx 或 .csv 文件发送到任意微信会话。选择后只在本机解析和去重。</text>
+            <text class="bill-import__eyebrow">WECHAT PAY + ALIPAY · 本地导入</text>
+            <text class="bill-import__title">导入微信或支付宝账单</text>
+            <text class="bill-import__helper">同一个入口自动识别平台：微信先解压邮件账单，再选择其中 .xlsx/.csv；支付宝直接选择导出的 .csv。文件需先发送到任意微信会话。</text>
           </view>
           <button
             class="bill-import__choose"
-            bindtap="chooseWechatBill"
+            bindtap="chooseBillFile"
             disabled="{{billImportLoading || isBillImportSaving}}"
             loading="{{billImportLoading}}"
           >{{billImportLoading ? '正在读取…' : (billImportPreview ? '重新选择账单' : '从微信会话选择文件')}}</button>
@@ -287,7 +287,7 @@
 
           <view class="bill-import__preview" wx:if="{{billImportPreview}}" aria-role="status">
             <view class="bill-import__file-row">
-              <text class="bill-import__file">{{billImportPreview.fileName}}</text>
+              <text class="bill-import__file">{{billImportPreview.sourceLabel}} · {{billImportPreview.fileName}}</text>
               <text class="bill-import__range">{{billImportPreview.dateFrom}} — {{billImportPreview.dateTo}}</text>
             </view>
             <view class="bill-import__metrics">
@@ -300,19 +300,24 @@
                 <text class="bill-import__metric-label">重复跳过</text>
               </view>
               <view class="bill-import__metric">
-                <text class="bill-import__metric-value">¥{{billImportPreview.totalText}}</text>
+                <text class="bill-import__metric-value">¥{{billImportPreview.expenseTotalText}}</text>
                 <text class="bill-import__metric-label">新增支出</text>
               </view>
+              <view class="bill-import__metric">
+                <text class="bill-import__metric-value">¥{{billImportPreview.incomeTotalText}}</text>
+                <text class="bill-import__metric-label">新增收入/退款</text>
+              </view>
             </view>
-            <text class="bill-import__skipped">另跳过：收入/不计收支 {{billImportPreview.skippedIncomeCount}} 笔、退款/撤销 {{billImportPreview.skippedStatusCount}} 笔、无效或超期 {{billImportPreview.skippedInvalidCount + billImportPreview.skippedOutOfRangeCount}} 笔。</text>
+            <text class="bill-import__rule">{{billImportPreview.ruleSummary}}</text>
+            <text class="bill-import__skipped">{{billImportPreview.skippedSummary}}</text>
             <button
               class="bill-import__confirm"
-              bindtap="confirmWechatBillImport"
+              bindtap="confirmBillImport"
               disabled="{{isBillImportSaving || billImportPreview.importCount === 0}}"
               loading="{{isBillImportSaving}}"
             >{{isBillImportSaving ? '正在导入…' : '确认导入 ' + billImportPreview.importCount + ' 笔'}}</button>
           </view>
-          <text class="bill-import__privacy">不会上传账单，不保存微信交易单号原文；导入后仍可按日期查看、修改或删除。</text>
+          <text class="bill-import__privacy">不会上传账单，不保存微信或支付宝交易单号原文；导入后仍可按日期查看、修改或删除。</text>
         </view>
         <view class="ledger-export">
           <view class="ledger-export__copy">

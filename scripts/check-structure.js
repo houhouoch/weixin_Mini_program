@@ -15,6 +15,8 @@ const required = [
   'pages/index/index.wxss',
   'domain/spending-summary.js',
   'domain/ledger-workbook.js',
+  'domain/alipay-bill.js',
+  'domain/gb18030.js',
   'domain/wechat-bill.js',
   'domain/theme.js',
   'infrastructure/file-system.js',
@@ -89,7 +91,8 @@ check(pageJs.includes('refreshHistoryDetail'), '页面支持按日期读取历�
 check(pageJs.includes('saveEditedTransaction'), '页面支持修改错误交易');
 check(pageJs.includes('handleExportLedger'), '页面支持导出 Excel 流水');
 check(pageJs.includes('wx.chooseMessageFile'), '页面支持从微信会话选择账单文件');
-check(pageJs.includes('confirmWechatBillImport'), '页面支持预览后确认导入微信账单');
+check(pageJs.includes('chooseBillFile'), '页面使用统一入口选择微信或支付宝账单');
+check(pageJs.includes('confirmBillImport'), '页面支持预览后确认导入平台账单');
 check(pageJs.includes('showMenu: true'), 'Excel 预览显示右上角文档菜单');
 check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel 文件');
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
@@ -113,9 +116,11 @@ check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'),
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');
 check(wxml.includes('不含启用前汇总、OPENID 或身份信息'), '导出区明示隐私范围');
-check(wxml.includes('导入微信支付账单'), '历史折叠区提供微信账单导入入口');
-check(wxml.includes('先解压微信发送到邮箱的账单压缩包'), '导入区说明加密压缩包需先解压');
-check(wxml.includes('不会上传账单，不保存微信交易单号原文'), '导入区明示本地解析与隐私边界');
+check(wxml.includes('导入微信或支付宝账单'), '历史折叠区提供统一平台账单导入入口');
+check(wxml.includes('微信先解压邮件账单'), '导入区说明微信加密压缩包需先解压');
+const billImportSource = fs.readFileSync(path.join(root, 'services/wechat-bill-import.js'), 'utf8');
+check(billImportSource.includes('还款只是在结清已有欠款'), '导入预览提供还款去重口径');
+check(wxml.includes('不会上传账单，不保存微信或支付宝交易单号原文'), '导入区明示本地解析与隐私边界');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 4'), '本地数据使用 schema 4');
@@ -137,6 +142,8 @@ check(
 check(transactionSource.includes("command.action === 'update'"), '交易服务支持修改命令');
 check(transactionSource.includes("command.action === 'import'"), '交易服务支持批量导入命令');
 check(transactionSource.includes('existingIds'), '交易服务按稳定标识去重导入');
+check(transactionSource.includes("command.source !== 'alipay'"), '交易服务接受支付宝平台导入');
+check(transactionSource.includes("record.direction === 'income'"), '批量导入保留支付宝收入方向');
 check(transactionSource.includes('options.dateKey'), '交易服务支持按日期读取当前和归档记录');
 check(transactionSource.includes('交易日期只能在原月份内修改'), '交易服务阻止跨月搬移记录');
 
@@ -153,10 +160,17 @@ check(billParserSource.includes('skippedStatusCount'), '微信账单解析器跳
 check(billParserSource.includes('duplicateInFileCount'), '微信账单解析器识别文件内重复记录');
 check(!/openid|unionid|avatar|nickName/i.test(billParserSource), '微信账单解析器不提取身份字段');
 
+const alipayParserSource = fs.readFileSync(path.join(root, 'domain/alipay-bill.js'), 'utf8');
+check(alipayParserSource.includes('skippedRepaymentCount'), '支付宝账单解析器单独统计还款跳过');
+check(alipayParserSource.includes('skippedNeutralizedRefundCount'), '支付宝账单解析器抵消匹配全额退款');
+check(alipayParserSource.includes("categoryId: direction === 'expense'"), '支付宝账单解析器同时生成收支记录');
+check(!/openid|unionid|avatar|nickName/i.test(alipayParserSource), '支付宝账单解析器不提取身份字段');
+
 const fileSystemSource = fs.readFileSync(path.join(root, 'infrastructure/file-system.js'), 'utf8');
 check(fileSystemSource.includes('readZipEntry'), 'XLSX 通过微信文件系统读取压缩条目');
 check(fileSystemSource.includes("encoding: 'utf-8'"), 'XLSX 条目分别指定 UTF-8 编码');
 check(fileSystemSource.includes('decodeUtf8Data'), 'XLSX 兼容微信返回 ArrayBuffer');
+check(fileSystemSource.includes('decodeGb18030'), '支付宝 CSV 兼容 GB18030 编码');
 
 if (failures.length) {
   console.error(`\n${failures.length} 项检查失败：`);

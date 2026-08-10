@@ -71,7 +71,7 @@ function makeWorksheet(state, generatedAt) {
       + numberCell(`F${rowNumber}`, (item.amountCents / 100).toFixed(2), 5)
       + inlineCell(`G${rowNumber}`, item.id.indexOf('wechat-') === 0
         ? '微信支付导入'
-        : '本机手动记录')
+        : (item.id.indexOf('alipay-') === 0 ? '支付宝导入' : '本机手动记录'))
       + '</row>');
   });
 

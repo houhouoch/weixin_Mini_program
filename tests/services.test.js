@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { setStorageAdapterForTests } = require('../infrastructure/storage');
-const { readZipTextEntries } = require('../infrastructure/file-system');
+const { decodeBillText, readZipTextEntries } = require('../infrastructure/file-system');
 const budgetStore = require('../services/budget-store');
 const { getSpendingSummary } = require('../services/spending-summary');
 const themeStore = require('../services/theme-store');
@@ -284,6 +284,50 @@ test('wechat XLSX file boundary requests text entries and decodes ArrayBuffer re
   } finally {
     global.wx = originalWx;
   }
+});
+
+test('bill text decoder reads the GB18030 encoding used by official Alipay CSV exports', () => {
+  const bytes = Buffer.from(
+    'vbvS18qxvOQsvbvS17fWwOAsytUvuLa/7re9yr0szcu/7rPJuaYsu7m/7rPJuaY=',
+    'base64'
+  );
+  assert.equal(
+    decodeBillText(bytes),
+    '交易时间,交易分类,收/付款方式,退款成功,还款成功'
+  );
+});
+
+test('alipay bill import preserves expense and income directions', async () => {
+  const now = new Date(2026, 7, 10, 12);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  const result = await addTransaction({
+    action: 'import',
+    commandId: 'alipay-import-1',
+    source: 'alipay',
+    transactions: [{
+      id: 'alipay-expense-a',
+      amountCents: 1500,
+      categoryId: 'food',
+      direction: 'expense',
+      note: '咖啡',
+      occurredAt: new Date(2026, 7, 9, 8).getTime()
+    }, {
+      id: 'alipay-income-a',
+      amountCents: 500,
+      categoryId: 'income_refund',
+      direction: 'income',
+      note: '部分退款',
+      occurredAt: new Date(2026, 7, 9, 9).getTime()
+    }]
+  });
+  assert.equal(result.importedCount, 2);
+  const saved = await listTransactions({ dateKey: '2026-08-09' });
+  assert.deepEqual(saved.map((item) => item.direction).sort(), ['expense', 'income']);
 });
 
 test('current transaction can be corrected and changes the daily detail', async () => {

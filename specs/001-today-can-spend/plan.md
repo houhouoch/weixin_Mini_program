@@ -15,6 +15,8 @@ pages/index (展示与交互)
   -> domain/budget (纯计算与关联校验)
   -> domain/ledger-workbook (纯 XLSX/ZIP 生成)
   -> domain/wechat-bill (纯 CSV/XLSX 解析、过滤与稳定指纹)
+  -> domain/alipay-bill (纯 CSV 解析、状态/退款配对与稳定指纹)
+  -> domain/gb18030 (支付宝官方 CSV 本地解码)
   -> domain/date (纯日期)
   -> infrastructure/storage (唯一微信缓存边界)
   -> infrastructure/file-system (小程序用户文件边界)
@@ -39,10 +41,12 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 - `services/spending-summary.js`：按日/月/年聚合真实本地记录。
 - `services/theme-store.js`：主题预设、安全微调和默认恢复。
 - `domain/ledger-workbook.js`：将当前与归档逐笔记录生成标准 XLSX。
-- `infrastructure/file-system.js`：Promise 化小程序用户目录写入、文本与 XLSX 条目读取。
+- `infrastructure/file-system.js`：Promise 化小程序用户目录写入、UTF-8/GB18030 文本与 XLSX 条目读取。
 - `services/ledger-export.js`：读取本地状态并交付 Excel 文件。
 - `domain/wechat-bill.js`：CSV/XLSX 表头发现、支出过滤、分类推断与稳定指纹。
-- `services/wechat-bill-import.js`：读取用户选择的微信账单并生成确认预览。
+- `domain/alipay-bill.js`：支付宝 CSV 状态过滤、还款排除、退款配对、分类与稳定指纹。
+- `domain/gb18030.js`：无运行时依赖解码支付宝官方 CSV。
+- `services/wechat-bill-import.js`：统一读取并自动识别微信/支付宝账单，生成确认预览。
 - `services/analytics.js`：统一隐私安全事件。
 - `tests/*.test.js`：Node 内建测试。
 - `scripts/check-structure.js`：页面数、缓存边界、分享和文件结构检查。

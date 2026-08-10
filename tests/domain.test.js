@@ -11,6 +11,7 @@ const {
 const { formatCents, parseYuanToCents } = require('../domain/money');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
+const { parseAlipayBillCsv } = require('../domain/alipay-bill');
 const {
   parseExcelSerialTimestamp,
   parseWechatBillCsv,
@@ -90,7 +91,7 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
       note: '咖啡',
       occurredAt: new Date(2026, 7, 9, 8, 30).getTime()
     }, {
-      id: 'side-job',
+      id: 'alipay-income',
       amountCents: 50000,
       categoryId: 'income_side_job',
       direction: 'income',
@@ -122,6 +123,7 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
   assert.ok(bytes.includes(Buffer.from('周末兼职')));
   assert.ok(bytes.includes(Buffer.from('2026-08-09')));
   assert.ok(bytes.includes(Buffer.from('微信支付导入')));
+  assert.ok(bytes.includes(Buffer.from('支付宝导入')));
   assert.ok(bytes.includes(Buffer.from('本机手动记录')));
   assert.ok(!bytes.includes(Buffer.from('5000.00')));
 });
@@ -150,6 +152,36 @@ test('wechat CSV bill discovers the header, imports only valid outgoing records 
   assert.equal(parsed.records[0].categoryId, 'transport');
   assert.equal(parsed.records[1].note, '拿铁,大杯');
   assert.match(parsed.records[1].id, /^wechat-[a-z0-9]+-[a-z0-9]+$/);
+});
+
+test('alipay CSV imports cash-flow records without double-counting repayments or full refunds', () => {
+  const csv = [
+    '支付宝交易明细',
+    '交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注',
+    '2026-08-09 08:00:00,餐饮美食,咖啡店,,拿铁,支出,15.00,余额,交易成功,E1,M1,',
+    '2026-08-09 09:00:00,数码电器,商店,,耳机,支出,20.00,花呗,等待确认收货,E2,M2,',
+    '2026-08-09 10:00:00,收入,客户,,项目款,收入,100.00,余额,交易成功,I1,MI1,',
+    '2026-08-08 10:00:00,餐饮美食,餐厅,,正餐,支出,30.00,余额,交易关闭,F1,MF1,',
+    '2026-08-08 11:00:00,退款,餐厅,,正餐退款,不计收支,30.00,余额,退款成功,F1,MF1,',
+    '2026-08-07 10:00:00,日用百货,商场,,生活用品,支出,30.00,余额,交易成功,P1,MP1,',
+    '2026-08-07 11:00:00,退款,商场,,部分退款,不计收支,5.00,余额,退款成功,P1,MP1,',
+    '2026-08-06 10:00:00,信用借还,花呗,,花呗还款,不计收支,50.00,余额,还款成功,R1,MR1,',
+    '2026-08-05 10:00:00,转账红包,银行,,信用卡还款,支出,60.00,余额,交易成功,R2,MR2,',
+    '2026-08-04 10:00:00,投资理财,基金,,基金申购,不计收支,80.00,余额,交易成功,N1,MN1,'
+  ].join('\n');
+  const parsed = parseAlipayBillCsv(csv, new Date(2026, 7, 10, 12));
+
+  assert.equal(parsed.records.length, 5);
+  assert.equal(parsed.expenseCount, 3);
+  assert.equal(parsed.incomeCount, 2);
+  assert.equal(parsed.refundIncomeCount, 1);
+  assert.equal(parsed.skippedRepaymentCount, 2);
+  assert.equal(parsed.skippedNeutralizedRefundCount, 1);
+  assert.equal(parsed.skippedNonCashCount, 1);
+  assert.equal(parsed.totalExpenseCents, 6500);
+  assert.equal(parsed.totalIncomeCents, 10500);
+  assert.equal(parsed.records.find((item) => item.note === '部分退款').categoryId, 'income_refund');
+  assert.match(parsed.records[0].id, /^alipay-[a-z0-9]+-[a-z0-9]+$/);
 });
 
 test('wechat XLSX sheet supports shared strings and rejects future or over-range records', () => {

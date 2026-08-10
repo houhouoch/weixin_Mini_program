@@ -41,17 +41,22 @@ function allTransactions(state) {
 
 function makeWorksheet(state, generatedAt) {
   const records = allTransactions(state);
-  const totalCents = records.reduce((sum, item) => sum + item.amountCents, 0);
+  const expenseTotalCents = records
+    .filter((item) => item.direction !== 'income')
+    .reduce((sum, item) => sum + item.amountCents, 0);
+  const incomeTotalCents = records
+    .filter((item) => item.direction === 'income')
+    .reduce((sum, item) => sum + item.amountCents, 0);
   const generatedText = `${toDateKey(generatedAt)} ${formatLocalTime(generatedAt)}`;
   const rows = [
     `<row r="1" ht="30" customHeight="1">${inlineCell('A1', '今天还能花 · 本地流水', 1)}</row>`,
     `<row r="2">${inlineCell('A2', '导出时间', 2)}${inlineCell('B2', generatedText)}</row>`,
     `<row r="3">${inlineCell('A3', '记录笔数', 2)}${numberCell('B3', records.length)}</row>`,
-    `<row r="4">${inlineCell('A4', '逐笔合计', 2)}${numberCell('B4', (totalCents / 100).toFixed(2), 5)}</row>`,
+    `<row r="4">${inlineCell('A4', '支出合计', 2)}${numberCell('B4', (expenseTotalCents / 100).toFixed(2), 5)}${inlineCell('C4', '收入合计', 2)}${numberCell('D4', (incomeTotalCents / 100).toFixed(2), 5)}</row>`,
     `<row r="5" ht="34" customHeight="1">${inlineCell('A5', '说明', 2)}${inlineCell('B5', '仅包含有真实日期的逐笔记录；启用前汇总没有明细日期，不伪造成流水。', 6)}</row>`,
     '<row r="6"></row>',
     `<row r="7" ht="24" customHeight="1">${[
-      ['A7', '日期'], ['B7', '时间'], ['C7', '分类'], ['D7', '用途'], ['E7', '金额（元）'], ['F7', '数据来源']
+      ['A7', '日期'], ['B7', '时间'], ['C7', '收支'], ['D7', '分类'], ['E7', '用途'], ['F7', '金额（元）'], ['G7', '数据来源']
     ].map(([ref, label]) => inlineCell(ref, label, 3)).join('')}</row>`
   ];
 
@@ -60,10 +65,11 @@ function makeWorksheet(state, generatedAt) {
     rows.push(`<row r="${rowNumber}">`
       + inlineCell(`A${rowNumber}`, toDateKey(item.occurredAt), 4)
       + inlineCell(`B${rowNumber}`, formatLocalTime(item.occurredAt), 4)
-      + inlineCell(`C${rowNumber}`, getCategoryLabel(item.categoryId))
-      + inlineCell(`D${rowNumber}`, item.note || '')
-      + numberCell(`E${rowNumber}`, (item.amountCents / 100).toFixed(2), 5)
-      + inlineCell(`F${rowNumber}`, item.id.indexOf('wechat-') === 0
+      + inlineCell(`C${rowNumber}`, item.direction === 'income' ? '收入' : '支出')
+      + inlineCell(`D${rowNumber}`, getCategoryLabel(item.categoryId))
+      + inlineCell(`E${rowNumber}`, item.note || '')
+      + numberCell(`F${rowNumber}`, (item.amountCents / 100).toFixed(2), 5)
+      + inlineCell(`G${rowNumber}`, item.id.indexOf('wechat-') === 0
         ? '微信支付导入'
         : '本机手动记录')
       + '</row>');
@@ -71,21 +77,22 @@ function makeWorksheet(state, generatedAt) {
 
   const totalRow = records.length + 8;
   rows.push(`<row r="${totalRow}" ht="24" customHeight="1">`
-    + inlineCell(`A${totalRow}`, '合计', 7)
-    + numberCell(`E${totalRow}`, (totalCents / 100).toFixed(2), 8)
+    + inlineCell(`A${totalRow}`, '支出合计', 7)
+    + numberCell(`F${totalRow}`, (expenseTotalCents / 100).toFixed(2), 8)
     + '</row>');
 
   return {
     records,
-    totalCents,
+    incomeTotalCents,
+    totalCents: expenseTotalCents,
     xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="7" topLeftCell="A8" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <sheetFormatPr defaultRowHeight="20"/>
-  <cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="11" customWidth="1"/><col min="3" max="3" width="11" customWidth="1"/><col min="4" max="4" width="26" customWidth="1"/><col min="5" max="5" width="15" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/></cols>
+  <cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="11" customWidth="1"/><col min="3" max="4" width="11" customWidth="1"/><col min="5" max="5" width="26" customWidth="1"/><col min="6" max="6" width="15" customWidth="1"/><col min="7" max="7" width="18" customWidth="1"/></cols>
   <sheetData>${rows.join('')}</sheetData>
-  <autoFilter ref="A7:F${Math.max(totalRow - 1, 7)}"/>
-  <mergeCells count="2"><mergeCell ref="A1:F1"/><mergeCell ref="B5:F5"/></mergeCells>
+  <autoFilter ref="A7:G${Math.max(totalRow - 1, 7)}"/>
+  <mergeCells count="2"><mergeCell ref="A1:G1"/><mergeCell ref="B5:G5"/></mergeCells>
   <pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
 </worksheet>`
   };
@@ -247,6 +254,7 @@ function buildLedgerWorkbook(state, value) {
     buffer: createZip(files, generatedAt),
     fileName: `今天还能花-流水-${stamp}.xlsx`,
     recordCount: worksheet.records.length,
+    incomeTotalCents: worksheet.incomeTotalCents,
     totalCents: worksheet.totalCents
   };
 }

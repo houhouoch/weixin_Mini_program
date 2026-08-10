@@ -48,7 +48,7 @@ function monthSource(state, monthKey) {
       baselineCents: state.budget.historicalSpentBeforeTrackingCents,
       monthKey,
       tracked: true,
-      transactions: state.transactions
+      transactions: state.transactions.filter((item) => item.direction !== 'income')
     };
   }
   const archived = (state.history || []).find((item) => item.monthKey === monthKey);
@@ -59,7 +59,7 @@ function monthSource(state, monthKey) {
     baselineCents: archived.historicalSpentBeforeTrackingCents,
     monthKey,
     tracked: true,
-    transactions: archived.transactions
+    transactions: archived.transactions.filter((item) => item.direction !== 'income')
   };
 }
 
@@ -68,7 +68,8 @@ function allActualTransactions(state) {
     (all, item) => all.concat(item.transactions),
     []
   );
-  return archived.concat(state.transactions || []);
+  return archived.concat(state.transactions || [])
+    .filter((item) => item.direction !== 'income');
 }
 
 function topCategory(records) {

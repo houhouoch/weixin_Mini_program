@@ -86,8 +86,16 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
       id: 'current',
       amountCents: 1500,
       categoryId: 'food',
+      direction: 'expense',
       note: '咖啡',
       occurredAt: new Date(2026, 7, 9, 8, 30).getTime()
+    }, {
+      id: 'side-job',
+      amountCents: 50000,
+      categoryId: 'income_side_job',
+      direction: 'income',
+      note: '周末兼职',
+      occurredAt: new Date(2026, 7, 9, 20, 30).getTime()
     }],
     history: [{
       monthKey: '2026-07',
@@ -105,10 +113,13 @@ test('ledger export creates a real xlsx zip with readable local transaction fiel
   assert.equal(bytes.readUInt32LE(0), 0x04034B50);
   assert.equal(bytes.readUInt32LE(bytes.length - 22), 0x06054B50);
   assert.equal(workbook.fileName, '今天还能花-流水-20260809-2216.xlsx');
-  assert.equal(workbook.recordCount, 2);
+  assert.equal(workbook.recordCount, 3);
   assert.equal(workbook.totalCents, 1900);
+  assert.equal(workbook.incomeTotalCents, 50000);
   assert.ok(bytes.includes(Buffer.from('咖啡')));
   assert.ok(bytes.includes(Buffer.from('地铁')));
+  assert.ok(bytes.includes(Buffer.from('收入')));
+  assert.ok(bytes.includes(Buffer.from('周末兼职')));
   assert.ok(bytes.includes(Buffer.from('2026-08-09')));
   assert.ok(bytes.includes(Buffer.from('微信支付导入')));
   assert.ok(bytes.includes(Buffer.from('本机手动记录')));
@@ -205,6 +216,31 @@ test('acceptance A02 and A03 additions update the result', () => {
   assert.equal(a03.statusAmountCents, 2000);
 });
 
+test('extra income increases the available budget without becoming spending', () => {
+  const now = new Date(2026, 3, 20, 12);
+  const result = deriveBudget(budget(), [{
+    id: 'side-job',
+    amountCents: 50000,
+    categoryId: 'income_side_job',
+    direction: 'income',
+    note: '周末兼职',
+    occurredAt: now.getTime()
+  }, {
+    id: 'coffee',
+    amountCents: 1500,
+    categoryId: 'food',
+    direction: 'expense',
+    note: '咖啡',
+    occurredAt: now.getTime()
+  }], now);
+
+  assert.equal(result.recordedIncomeCents, 50000);
+  assert.equal(result.monthlyFlexibleBudgetCents, 350000);
+  assert.equal(result.todaySpentCents, 1500);
+  assert.equal(result.totalSpentCents, 151500);
+  assert.equal(result.monthlyRemainingCents, 198500);
+});
+
 test('budget unavailable and month overspend have priority', () => {
   const now = new Date(2026, 3, 20, 12);
   const unavailable = deriveBudget(budget({
@@ -255,7 +291,8 @@ test('day and month summaries use only real dated records for trends', () => {
     }),
     transactions: [
       { id: 'today', amountCents: 1500, categoryId: 'food', note: '咖啡', occurredAt: now.getTime() },
-      { id: 'yesterday', amountCents: 400, categoryId: 'transport', note: '地铁', occurredAt: new Date(2026, 7, 8, 8).getTime() }
+      { id: 'yesterday', amountCents: 400, categoryId: 'transport', note: '地铁', occurredAt: new Date(2026, 7, 8, 8).getTime() },
+      { id: 'income', amountCents: 50000, categoryId: 'income_side_job', direction: 'income', note: '外快', occurredAt: now.getTime() }
     ],
     history: []
   };

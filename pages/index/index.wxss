@@ -571,6 +571,45 @@
   line-height: 1.5;
 }
 
+.direction-switch {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96rpx;
+  margin-top: 18rpx;
+  padding: 8rpx;
+  border: 2rpx solid rgba(18, 63, 53, 0.22);
+  border-radius: 28rpx;
+  background: rgba(255, 249, 236, 0.72);
+}
+
+.direction-switch__button {
+  flex: 1;
+  min-height: 80rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border-radius: 22rpx;
+  background: transparent;
+  color: #31574D;
+  font-size: 26rpx;
+  font-weight: 750;
+  line-height: 80rpx;
+}
+
+.direction-switch__button--active {
+  background: var(--theme-primary, #123F35);
+  color: var(--theme-on-primary, #FFF9EC);
+}
+
+.direction-switch__button[disabled] {
+  opacity: 0.48;
+}
+
+.direction-switch--edit {
+  margin: 0 0 24rpx;
+  background: var(--theme-page, #F5EBD7);
+}
+
 .category-grid {
   display: flex;
   flex-wrap: wrap;
@@ -747,6 +786,14 @@
   font-size: 21rpx;
 }
 
+.budget-rail__income {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--theme-primary, #123F35);
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
 .history-date-button {
   box-sizing: border-box;
   min-height: 88rpx;
@@ -833,6 +880,11 @@
   background: #6E7D75;
 }
 
+.record-row--income .record-tag {
+  background: #D9E9DF;
+  color: #123F35;
+}
+
 .record-main {
   display: flex;
   flex: 1;
@@ -868,6 +920,10 @@
   color: var(--theme-text, #123F35);
   font-size: 26rpx;
   font-weight: 800;
+}
+
+.record-amount--income {
+  color: #176B50;
 }
 
 .delete-button {

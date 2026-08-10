@@ -1,5 +1,5 @@
 const { TRANSACTION_MAX_CENTS } = require('../domain/money');
-const { isValidCategoryId } = require('../domain/categories');
+const { categoriesForDirection, isValidCategoryId } = require('../domain/categories');
 const { parseLocalDateKey, toDateKey, toMonthKey } = require('../domain/date');
 const { readState, saveState } = require('./state-store');
 
@@ -13,6 +13,10 @@ function sortedTransactions(transactions) {
 }
 
 function assertTransactionFields(command) {
+  const direction = command.direction === undefined ? 'expense' : command.direction;
+  if (direction !== 'expense' && direction !== 'income') {
+    throw new Error('收支类型无效');
+  }
   if (!Number.isInteger(command.amountCents)
     || command.amountCents <= 0
     || command.amountCents > TRANSACTION_MAX_CENTS) {
@@ -22,7 +26,10 @@ function assertTransactionFields(command) {
     throw new Error('交易时间无效');
   }
   if (!isValidCategoryId(command.categoryId)) {
-    throw new Error('请选择消费分类');
+    throw new Error('请选择收支分类');
+  }
+  if (!categoriesForDirection(direction).some((item) => item.id === command.categoryId)) {
+    throw new Error(direction === 'income' ? '请选择收入分类' : '请选择支出分类');
   }
   if (command.note !== undefined && typeof command.note !== 'string') {
     throw new Error('用途说明无效');
@@ -55,6 +62,9 @@ function assertCommand(command) {
     }
     command.transactions.forEach((transaction) => {
       assertTransactionFields(transaction);
+      if (transaction.direction === 'income') {
+        throw new Error('微信账单导入当前仅支持支出记录');
+      }
       if (typeof transaction.id !== 'string' || !/^wechat-[a-z0-9-]+$/.test(transaction.id)) {
         throw new Error('微信账单记录标识无效');
       }
@@ -89,6 +99,7 @@ function transactionFromCommand(command) {
     id: command.transactionId || command.commandId,
     amountCents: command.amountCents,
     categoryId: command.categoryId,
+    direction: command.direction === 'income' ? 'income' : 'expense',
     note: (command.note || '').trim(),
     occurredAt: command.occurredAt
   };
@@ -167,6 +178,7 @@ function importTransactions(state, records) {
       id: record.id,
       amountCents: record.amountCents,
       categoryId: record.categoryId,
+      direction: 'expense',
       note: (record.note || '').trim(),
       occurredAt: record.occurredAt
     };

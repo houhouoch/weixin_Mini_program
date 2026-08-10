@@ -1,5 +1,9 @@
 const { deriveBudget, validateBudgetAmounts } = require('../../domain/budget');
-const { CATEGORIES, getCategoryLabel } = require('../../domain/categories');
+const {
+  CATEGORIES,
+  categoriesForDirection,
+  getCategoryLabel
+} = require('../../domain/categories');
 const {
   daysInMonth,
   daysSince,
@@ -120,12 +124,16 @@ function formatHistoryDate(dateKey) {
 }
 
 function toTransactionView(item, now) {
+  const direction = item.direction === 'income' ? 'income' : 'expense';
   return {
     id: item.id,
     amountCents: item.amountCents,
     amountText: formatCents(item.amountCents),
     categoryId: item.categoryId,
     categoryLabel: getCategoryLabel(item.categoryId),
+    direction,
+    directionLabel: direction === 'income' ? '收入' : '支出',
+    amountPrefix: direction === 'income' ? '+' : '-',
     note: item.note,
     purposeText: item.note || getCategoryLabel(item.categoryId),
     occurredAt: item.occurredAt,
@@ -162,12 +170,14 @@ Page({
     editDrawerVisible: false,
     editError: '',
     editForm: null,
+    editCategories: CATEGORIES,
     historyDateKey: INITIAL_DATE_KEY,
     historyDateLabel: formatHistoryDate(INITIAL_DATE_KEY),
     historyError: '',
     historyLoading: false,
     historyMaxDateKey: INITIAL_DATE_KEY,
-    historyTotalText: '0.00',
+    historyExpenseText: '0.00',
+    historyIncomeText: '0.00',
     historyTransactions: [],
     exportError: '',
     exportFileName: '',
@@ -178,6 +188,7 @@ Page({
     isExporting: false,
     isSaving: false,
     noteInput: '',
+    recordDirection: 'expense',
     readMessage: '',
     reviewError: '',
     reviewLoading: false,
@@ -185,7 +196,7 @@ Page({
     reviewPeriods: REVIEW_PERIODS,
     reviewSummary: null,
     result: null,
-    shareTitle: '今天还能花｜开始我的支出记录',
+    shareTitle: '今天还能花｜开始我的收支记录',
     selectedCategoryId: 'food',
     sections: {
       composer: false,
@@ -332,6 +343,7 @@ Page({
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
+        recordedIncomeText: formatCents(result.recordedIncomeCents),
         persona,
         heroAmountText: presentation.amountText,
         heroBadge: presentation.badge,
@@ -402,10 +414,16 @@ Page({
       const transactions = await listTransactions({ dateKey: this.data.historyDateKey });
       if (requestId !== this._historyReadId) return;
       const historyTransactions = transactions.map((item) => toTransactionView(item, new Date()));
-      const historyTotalCents = transactions.reduce((sum, item) => sum + item.amountCents, 0);
+      const historyExpenseCents = transactions
+        .filter((item) => item.direction !== 'income')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const historyIncomeCents = transactions
+        .filter((item) => item.direction === 'income')
+        .reduce((sum, item) => sum + item.amountCents, 0);
       this.setData({
         historyDateLabel: formatHistoryDate(this.data.historyDateKey),
-        historyTotalText: formatCents(historyTotalCents),
+        historyExpenseText: formatCents(historyExpenseCents),
+        historyIncomeText: formatCents(historyIncomeCents),
         historyTransactions
       });
     } catch (error) {
@@ -435,6 +453,20 @@ Page({
     });
   },
 
+  handleRecordDirection(event) {
+    const recordDirection = event.currentTarget.dataset.direction;
+    if (recordDirection === this.data.recordDirection
+      || (recordDirection !== 'expense' && recordDirection !== 'income')) return;
+    const categories = categoriesForDirection(recordDirection);
+    this.setData({
+      categories,
+      feedback: '',
+      inputError: '',
+      recordDirection,
+      selectedCategoryId: categories[0].id
+    });
+  },
+
   handleNoteInput(event) {
     this.setData({ noteInput: event.detail.value, feedback: '' });
   },
@@ -454,6 +486,7 @@ Page({
     }
 
     const now = new Date();
+    const direction = this.data.recordDirection;
     this._transactionInFlight = true;
     this.setData({ isSaving: true, inputError: '', feedback: '' });
     try {
@@ -462,17 +495,25 @@ Page({
         amountCents: parsed.value,
         categoryId: this.data.selectedCategoryId,
         commandId: commandId('create'),
+        direction,
         note: this.data.noteInput,
         occurredAt: now.getTime()
       });
       this.setData({
         amountInput: '',
         noteInput: '',
-        feedback: result.duplicate ? '这笔记录已经保存过了。' : '已记下，今日额度已更新。'
+        feedback: result.duplicate
+          ? '这笔记录已经保存过了。'
+          : direction === 'income'
+            ? '已记下，额外收入已加入本月可用额度。'
+            : '已记下，今日额度已更新。'
       });
       wx.hideKeyboard();
       await this.refreshAfterMutation();
-      trackEvent('transaction_saved', { result: result.duplicate ? 'duplicate' : 'success' });
+      trackEvent('transaction_saved', {
+        direction,
+        result: result.duplicate ? 'duplicate' : 'success'
+      });
     } catch (error) {
       console.error('保存交易失败', error);
       this.setData({ feedback: '', inputError: '保存失败，请重试' });
@@ -492,10 +533,12 @@ Page({
     const monthEnd = `${monthKey}-${String(daysInMonth(originalDate)).padStart(2, '0')}`;
     this.setData({
       editDrawerVisible: true,
+      editCategories: categoriesForDirection(transaction.direction),
       editError: '',
       editForm: {
         amount: centsToInput(transaction.amountCents),
         categoryId: transaction.categoryId,
+        direction: transaction.direction,
         dateKey: toDateKey(originalDate),
         id: transaction.id,
         maxDateKey: monthEnd < this.data.historyMaxDateKey
@@ -521,6 +564,19 @@ Page({
   handleEditCategorySelect(event) {
     this.setData({
       'editForm.categoryId': event.currentTarget.dataset.id,
+      editError: ''
+    });
+  },
+
+  handleEditDirection(event) {
+    const direction = event.currentTarget.dataset.direction;
+    if (!this.data.editForm || direction === this.data.editForm.direction
+      || (direction !== 'expense' && direction !== 'income')) return;
+    const editCategories = categoriesForDirection(direction);
+    this.setData({
+      editCategories,
+      'editForm.categoryId': editCategories[0].id,
+      'editForm.direction': direction,
       editError: ''
     });
   },
@@ -560,6 +616,7 @@ Page({
         amountCents: parsed.value,
         categoryId: this.data.editForm.categoryId,
         commandId: commandId('update'),
+        direction: this.data.editForm.direction,
         note: this.data.editForm.note,
         occurredAt: selectedDate.getTime(),
         transactionId: this.data.editForm.id
@@ -590,9 +647,12 @@ Page({
     const categoryLabel = transaction.categoryLabel;
     const purpose = transaction.note ? ` · ${transaction.note}` : '';
     const isCurrentMonth = toMonthKey(transaction.occurredAt) === toMonthKey(new Date());
+    const impactText = transaction.direction === 'income'
+      ? (isCurrentMonth ? '本月可用额度会重新计算。' : '对应历史明细会更新。')
+      : (isCurrentMonth ? '今日额度会重新计算。' : '对应历史回看会更新。');
     wx.showModal({
       title: '删除记录',
-      content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} 记录？${isCurrentMonth ? '今日额度会重新计算。' : '对应历史回看会更新。'}`,
+      content: `删除“${categoryLabel}${purpose}”的 ¥${amountText} ${transaction.directionLabel}记录？${impactText}`,
       confirmText: '删除',
       confirmColor: '#C84F4A',
       success: async (result) => {
@@ -754,8 +814,16 @@ Page({
     });
     if (valid) {
       const recordedSpentCents = this.data.transactions
+        .filter((item) => item.direction !== 'income')
         .reduce((sum, item) => sum + item.amountCents, 0);
-      const relationValidation = validateBudgetAmounts(values, recordedSpentCents);
+      const recordedIncomeCents = this.data.transactions
+        .filter((item) => item.direction === 'income')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const relationValidation = validateBudgetAmounts(
+        values,
+        recordedSpentCents,
+        recordedIncomeCents
+      );
       Object.assign(errors, relationValidation.errors);
       valid = relationValidation.valid;
     }

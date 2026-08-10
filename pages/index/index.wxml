@@ -1,7 +1,7 @@
 <view class="page-shell" style="{{themeStyle}}">
   <view class="share-entry" wx:if="{{fromShare && viewState !== 'ready'}}">
     <text class="share-entry__eyebrow">朋友分享给你一个简单的预算方法</text>
-    <text class="share-entry__title">开始我的支出记录</text>
+    <text class="share-entry__title">开始我的收支记录</text>
     <text class="share-entry__copy">数据只会保存在你自己的设备中。</text>
   </view>
 
@@ -61,6 +61,7 @@
         <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
       </view>
       <text class="budget-rail__helper">建议额度 ¥{{result.todaySuggestedBudgetText}} · {{result.statusText}}</text>
+      <text class="budget-rail__income" wx:if="{{result.recordedIncomeText !== '0.00'}}">本月额外收入 +¥{{result.recordedIncomeText}}</text>
     </view>
 
     <view class="review-card collapsible-section {{sections.review ? '' : 'collapsible-section--collapsed'}}">
@@ -130,13 +131,30 @@
       >
         <view class="section-toggle__copy">
           <text class="composer-title">快速记一笔</text>
-          <text class="section-toggle__summary">分类 · 用途 · 金额</text>
+          <text class="section-toggle__summary">支出 / 收入 · 分类 · 金额</text>
         </view>
         <text class="section-toggle__action">{{sections.composer ? '收起' : '展开'}}</text>
       </button>
 
       <view class="fold-content" wx:if="{{sections.composer}}">
-        <text class="composer-copy">这笔花在哪儿？先选分类，再补一句用途；不想写也可以直接记。</text>
+        <view class="direction-switch" role="tablist" aria-label="选择记录支出或收入">
+          <button
+            class="direction-switch__button {{recordDirection === 'expense' ? 'direction-switch__button--active' : ''}}"
+            data-direction="expense"
+            bindtap="handleRecordDirection"
+            disabled="{{isSaving}}"
+            aria-label="记录支出"
+          >支出</button>
+          <button
+            class="direction-switch__button {{recordDirection === 'income' ? 'direction-switch__button--active' : ''}}"
+            data-direction="income"
+            bindtap="handleRecordDirection"
+            disabled="{{isSaving}}"
+            aria-label="记录收入"
+          >收入</button>
+        </view>
+        <text class="composer-copy" wx:if="{{recordDirection === 'expense'}}">这笔花在哪儿？先选分类，再补一句用途；不想写也可以直接记。</text>
+        <text class="composer-copy" wx:else>记录外快、奖金等额外收入；设置中的本月收入无需重复记录。</text>
 
       <view class="category-grid" role="list">
         <button
@@ -145,19 +163,19 @@
           class="category-chip {{selectedCategoryId === item.id ? 'category-chip--selected' : ''}}"
           data-id="{{item.id}}"
           bindtap="handleCategorySelect"
-          aria-label="选择{{item.label}}分类"
+          aria-label="选择{{recordDirection === 'income' ? '收入' : '支出'}}分类{{item.label}}"
         >{{item.label}}</button>
       </view>
 
-      <text class="composer-label">用途（可选）</text>
+      <text class="composer-label">{{recordDirection === 'income' ? '来源' : '用途'}}（可选）</text>
       <input
         class="purpose-field"
         type="text"
         value="{{noteInput}}"
-        placeholder="例如：咖啡、午餐、地铁"
+        placeholder="{{recordDirection === 'income' ? '例如：周末兼职、项目奖金' : '例如：咖啡、午餐、地铁'}}"
         maxlength="20"
         bindinput="handleNoteInput"
-        aria-label="填写消费用途"
+        aria-label="填写{{recordDirection === 'income' ? '收入来源' : '消费用途'}}"
       />
 
       <view class="composer-action-row">
@@ -171,7 +189,7 @@
             maxlength="10"
             bindinput="handleAmountInput"
             confirm-type="done"
-            aria-label="输入本次消费金额"
+            aria-label="输入本次{{recordDirection === 'income' ? '收入' : '支出'}}金额"
           />
         </view>
         <button
@@ -179,7 +197,7 @@
           bindtap="handleAddTransaction"
           disabled="{{isSaving}}"
           loading="{{isSaving}}"
-        >{{isSaving ? '保存中…' : '记下这笔'}}</button>
+        >{{isSaving ? '保存中…' : (recordDirection === 'income' ? '记下收入' : '记下支出')}}</button>
       </view>
         <view class="composer-feedback" wx:if="{{inputError || feedback}}">
           <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
@@ -207,7 +225,7 @@
         <view class="history-toolbar">
           <view class="history-toolbar__copy">
             <text class="history-toolbar__label">查看日期</text>
-            <text class="history-toolbar__summary">{{historyTransactions.length}} 笔 · ¥{{historyTotalText}}</text>
+            <text class="history-toolbar__summary">{{historyTransactions.length}} 笔 · 支出 ¥{{historyExpenseText}} · 收入 ¥{{historyIncomeText}}</text>
           </view>
           <picker
             mode="date"
@@ -228,26 +246,26 @@
         </view>
 
         <view class="record-list" wx:else>
-          <view class="record-row" wx:for="{{historyTransactions}}" wx:key="id">
+          <view class="record-row record-row--{{item.direction}}" wx:for="{{historyTransactions}}" wx:key="id">
             <text class="record-tag record-tag--{{item.categoryId}}">{{item.categoryLabel}}</text>
             <view class="record-main">
               <text class="record-purpose">{{item.purposeText}}</text>
               <text class="record-time">{{item.occurredAtText}}</text>
             </view>
             <view class="record-tail">
-              <text class="record-amount">- ¥{{item.amountText}}</text>
+              <text class="record-amount record-amount--{{item.direction}}">{{item.amountPrefix}} ¥{{item.amountText}}</text>
               <view class="record-actions">
                 <button
                   class="edit-record-button"
                   data-id="{{item.id}}"
                   bindtap="openEditTransaction"
-                  aria-label="修改{{item.categoryLabel}}{{item.purposeText}}这笔消费"
+                  aria-label="修改{{item.categoryLabel}}{{item.purposeText}}这笔{{item.directionLabel}}"
                 >修改</button>
                 <button
                   class="delete-button"
                   data-id="{{item.id}}"
                   bindtap="handleDeleteTransaction"
-                  aria-label="删除{{item.categoryLabel}}{{item.purposeText}}这笔消费"
+                  aria-label="删除{{item.categoryLabel}}{{item.purposeText}}这笔{{item.directionLabel}}"
                 >删除</button>
               </view>
             </view>
@@ -299,7 +317,7 @@
         <view class="ledger-export">
           <view class="ledger-export__copy">
             <text class="ledger-export__title">导出全部本地流水</text>
-            <text class="ledger-export__helper">Excel 包含日期、时间、分类、用途和金额。打开后可点右上角操作；PC 端可保存到磁盘。</text>
+            <text class="ledger-export__helper">Excel 包含日期、时间、收支、分类、用途/来源和金额。打开后可点右上角操作；PC 端可保存到磁盘。</text>
           </view>
           <view class="ledger-export__actions">
             <button
@@ -348,16 +366,32 @@
     <view class="drawer-header">
       <view>
         <text class="drawer-eyebrow">纠正这笔本地记录</text>
-        <text class="drawer-title">修改消费明细</text>
+        <text class="drawer-title">修改收支明细</text>
       </view>
       <button class="drawer-close" bindtap="closeEditDrawer" aria-label="关闭交易修改">关闭</button>
     </view>
 
     <scroll-view class="edit-scroll" scroll-y="true">
-      <text class="field-label">消费分类</text>
+      <view class="direction-switch direction-switch--edit" role="tablist" aria-label="修改记录类型">
+        <button
+          class="direction-switch__button {{editForm.direction === 'expense' ? 'direction-switch__button--active' : ''}}"
+          data-direction="expense"
+          bindtap="handleEditDirection"
+          disabled="{{isEditSaving}}"
+          aria-label="修改为支出"
+        >支出</button>
+        <button
+          class="direction-switch__button {{editForm.direction === 'income' ? 'direction-switch__button--active' : ''}}"
+          data-direction="income"
+          bindtap="handleEditDirection"
+          disabled="{{isEditSaving}}"
+          aria-label="修改为收入"
+        >收入</button>
+      </view>
+      <text class="field-label">{{editForm.direction === 'income' ? '收入分类' : '支出分类'}}</text>
       <view class="category-grid edit-category-grid" role="list">
         <button
-          wx:for="{{categories}}"
+          wx:for="{{editCategories}}"
           wx:key="id"
           class="category-chip {{editForm.categoryId === item.id ? 'category-chip--selected' : ''}}"
           data-id="{{item.id}}"
@@ -367,7 +401,7 @@
       </view>
 
       <view class="form-field">
-        <text class="field-label">用途（可选）</text>
+        <text class="field-label">{{editForm.direction === 'income' ? '来源' : '用途'}}（可选）</text>
         <view class="form-input">
           <input
             type="text"
@@ -375,8 +409,8 @@
             data-field="note"
             maxlength="20"
             bindinput="handleEditFormInput"
-            placeholder="例如：咖啡、午餐、地铁"
-            aria-label="修改消费用途"
+            placeholder="{{editForm.direction === 'income' ? '例如：周末兼职、项目奖金' : '例如：咖啡、午餐、地铁'}}"
+            aria-label="修改{{editForm.direction === 'income' ? '收入来源' : '消费用途'}}"
           />
         </view>
       </view>
@@ -390,20 +424,20 @@
             value="{{editForm.amount}}"
             data-field="amount"
             bindinput="handleEditFormInput"
-            aria-label="修改消费金额"
+            aria-label="修改{{editForm.direction === 'income' ? '收入' : '支出'}}金额"
           />
         </view>
       </view>
 
       <view class="form-field">
-        <text class="field-label">消费日期</text>
+        <text class="field-label">发生日期</text>
         <picker
           mode="date"
           value="{{editForm.dateKey}}"
           start="{{editForm.minDateKey}}"
           end="{{editForm.maxDateKey}}"
           bindchange="handleEditDateChange"
-          aria-label="修改消费日期"
+          aria-label="修改发生日期"
         >
           <view class="edit-date-field">{{editForm.dateKey}}</view>
         </picker>

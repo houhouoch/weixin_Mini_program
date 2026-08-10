@@ -106,7 +106,10 @@ check(
   '消费回看、快速记账、记录历史均可独立折叠'
 );
 check(wxml.includes('mode="date"'), '历史回顾使用原生日期选择器');
-check(wxml.includes('修改消费明细'), '页面提供交易修改抽屉');
+check(wxml.includes('修改收支明细'), '页面提供交易修改抽屉');
+check(wxml.includes('data-direction="income"') && wxml.includes('记下收入'), '页面提供额外收入入口');
+check(wxml.includes('本月收入无需重复记录'), '收入入口提示避免重复记录固定收入');
+check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');
 check(wxml.includes('不含启用前汇总、OPENID 或身份信息'), '导出区明示隐私范围');
@@ -115,7 +118,8 @@ check(wxml.includes('先解压微信发送到邮箱的账单压缩包'), '导入
 check(wxml.includes('不会上传账单，不保存微信交易单号原文'), '导入区明示本地解析与隐私边界');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
-check(stateSource.includes('const SCHEMA_VERSION = 3'), '本地数据使用 schema 3');
+check(stateSource.includes('const SCHEMA_VERSION = 4'), '本地数据使用 schema 4');
+check(stateSource.includes("direction: 'expense'"), '旧数据迁移为支出方向');
 check(stateSource.includes('HISTORY_MONTH_LIMIT = 36'), '历史归档设置本地保留上限');
 
 const themeSource = fs.readFileSync(path.join(root, 'domain/theme.js'), 'utf8');

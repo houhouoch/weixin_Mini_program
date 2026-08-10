@@ -281,6 +281,7 @@ function parseWechatBillRows(rows, value) {
       id: stableWechatId(values),
       amountCents: amount.value,
       categoryId: inferCategory(categoryText),
+      direction: 'expense',
       note: shortNote(values.product, values.counterparty),
       occurredAt
     });

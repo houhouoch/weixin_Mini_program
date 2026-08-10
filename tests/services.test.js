@@ -78,7 +78,7 @@ test('budget store rejects impossible relations and keeps the last valid state',
     fixedExpenseCents: 750000,
     savingGoalCents: 0,
     historicalSpentBeforeTrackingCents: 0
-  }, now), /收入至少需要 ¥8500\.00/);
+  }, now), /收入合计至少需要 ¥8500\.00/);
   assert.equal((await budgetStore.loadBudgetContext(now)).budget.fixedExpenseCents, 400000);
 });
 
@@ -112,6 +112,62 @@ test('transaction commands are idempotent and delete through addTransaction', as
     transactionId: 'transaction-1'
   });
   assert.equal((await listTransactions()).length, 0);
+});
+
+test('income transaction persists, can be edited, and supports income categories only', async () => {
+  const now = new Date(2026, 7, 9, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  await addTransaction({
+    action: 'create',
+    commandId: 'income-create',
+    transactionId: 'income-record',
+    amountCents: 50000,
+    categoryId: 'income_side_job',
+    direction: 'income',
+    note: '周末兼职',
+    occurredAt: now.getTime()
+  });
+
+  let saved = (await listTransactions())[0];
+  assert.equal(saved.direction, 'income');
+  assert.equal(saved.categoryId, 'income_side_job');
+
+  await addTransaction({
+    action: 'update',
+    commandId: 'income-update',
+    transactionId: 'income-record',
+    amountCents: 60000,
+    categoryId: 'income_bonus',
+    direction: 'income',
+    note: '项目奖金',
+    occurredAt: now.getTime()
+  });
+  saved = (await listTransactions())[0];
+  assert.equal(saved.amountCents, 60000);
+  assert.equal(saved.categoryId, 'income_bonus');
+
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 450000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  assert.equal((await budgetStore.loadBudgetContext(now)).budget.savingGoalCents, 450000);
+
+  await assert.rejects(addTransaction({
+    action: 'create',
+    commandId: 'bad-income-category',
+    amountCents: 1000,
+    categoryId: 'food',
+    direction: 'income',
+    note: '',
+    occurredAt: now.getTime()
+  }), /请选择收入分类/);
 });
 
 test('wechat bill import writes current and archived months and remains idempotent', async () => {
@@ -389,14 +445,15 @@ test('legacy schema migrates transactions to other without losing amount or time
     id: 'legacy-1',
     amountCents: 1500,
     categoryId: 'other',
+    direction: 'expense',
     note: '',
     occurredAt
   }]);
-  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 3);
+  assert.equal(adapter.data.get('today-can-spend:v1').schemaVersion, 4);
   assert.deepEqual(adapter.data.get('today-can-spend:v1').history, []);
 });
 
-test('schema 2 migrates to schema 3 without changing current records', async () => {
+test('schema 2 migrates to schema 4 and marks current records as expenses', async () => {
   const adapter = makeAdapter();
   const occurredAt = new Date(2026, 7, 9, 9, 30).getTime();
   adapter.data.set('today-can-spend:v1', {
@@ -423,8 +480,9 @@ test('schema 2 migrates to schema 3 without changing current records', async () 
   const transactions = await listTransactions();
   assert.equal(transactions.length, 1);
   assert.equal(transactions[0].note, '咖啡');
+  assert.equal(transactions[0].direction, 'expense');
   const state = adapter.data.get('today-can-spend:v1');
-  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.schemaVersion, 4);
   assert.deepEqual(state.history, []);
 });
 
@@ -534,6 +592,11 @@ test('imported cross-day, cross-month and cross-year data stays in the correct r
 
   const day = await getSpendingSummary('day', new Date(2026, 7, 9, 12));
   assert.deepEqual(day.metrics.map((item) => item.value), ['¥30', '¥15', '¥0']);
+  const migratedState = adapter.data.get('today-can-spend:v1');
+  assert.equal(migratedState.schemaVersion, 4);
+  assert.ok(migratedState.transactions.every((item) => item.direction === 'expense'));
+  assert.ok(migratedState.history.every((month) =>
+    month.transactions.every((item) => item.direction === 'expense')));
 
   const july = await getSpendingSummary('month', new Date(2026, 6, 31, 12));
   assert.equal(july.metrics[0].value, '¥52');
@@ -591,7 +654,7 @@ test('transaction rejects unknown category and overlong purpose', async () => {
     commandId: 'bad-category',
     note: '咖啡',
     occurredAt: now.getTime()
-  }), /请选择消费分类/);
+  }), /请选择收支分类/);
 
   await assert.rejects(addTransaction({
     action: 'create',

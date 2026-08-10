@@ -1,10 +1,11 @@
 const { BUDGET_FIELD_MAX_CENTS, TRANSACTION_MAX_CENTS } = require('../domain/money');
-const { isValidCategoryId } = require('../domain/categories');
+const { categoriesForDirection, isValidCategoryId } = require('../domain/categories');
 const { readRaw, removeRaw, writeRaw } = require('../infrastructure/storage');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const LEGACY_SCHEMA_VERSION = 1;
-const PREVIOUS_SCHEMA_VERSION = 2;
+const SCHEMA_TWO_VERSION = 2;
+const PREVIOUS_SCHEMA_VERSION = 3;
 const NOTE_MAX_LENGTH = 20;
 const HISTORY_MONTH_LIMIT = 36;
 
@@ -32,8 +33,26 @@ function isValidTransaction(transaction) {
     transaction
     && typeof transaction.id === 'string'
     && transaction.id.length > 0
+    && (transaction.direction === 'expense' || transaction.direction === 'income')
     && isIntegerBetween(transaction.amountCents, 1, TRANSACTION_MAX_CENTS)
     && isValidCategoryId(transaction.categoryId)
+    && categoriesForDirection(transaction.direction)
+      .some((category) => category.id === transaction.categoryId)
+    && typeof transaction.note === 'string'
+    && transaction.note.length <= NOTE_MAX_LENGTH
+    && Number.isFinite(transaction.occurredAt)
+  );
+}
+
+function isValidPreviousTransaction(transaction) {
+  return Boolean(
+    transaction
+    && typeof transaction.id === 'string'
+    && transaction.id.length > 0
+    && isIntegerBetween(transaction.amountCents, 1, TRANSACTION_MAX_CENTS)
+    && isValidCategoryId(transaction.categoryId)
+    && categoriesForDirection('expense')
+      .some((category) => category.id === transaction.categoryId)
     && typeof transaction.note === 'string'
     && transaction.note.length <= NOTE_MAX_LENGTH
     && Number.isFinite(transaction.occurredAt)
@@ -62,6 +81,24 @@ function isValidArchiveEntry(entry) {
     && Array.isArray(entry.transactions)
     && entry.transactions.every(isValidTransaction)
   );
+}
+
+function isValidPreviousArchiveEntry(entry) {
+  return Boolean(
+    entry
+    && /^\d{4}-\d{2}$/.test(entry.monthKey)
+    && isIntegerBetween(
+      entry.historicalSpentBeforeTrackingCents,
+      0,
+      BUDGET_FIELD_MAX_CENTS
+    )
+    && Array.isArray(entry.transactions)
+    && entry.transactions.every(isValidPreviousTransaction)
+  );
+}
+
+function asExpense(transaction) {
+  return Object.assign({}, transaction, { direction: 'expense' });
 }
 
 function hasValidStateShell(state, transactionValidator, allowNullBudget) {
@@ -103,6 +140,7 @@ function migrateSchemaOne(state) {
     budget: state.budget,
     transactions: state.transactions.map((transaction) => Object.assign({}, transaction, {
       categoryId: 'other',
+      direction: 'expense',
       note: ''
     })),
     processedCommandIds: state.processedCommandIds,
@@ -112,18 +150,37 @@ function migrateSchemaOne(state) {
 
 function migrateSchemaTwo(state) {
   if (!state
-    || state.schemaVersion !== PREVIOUS_SCHEMA_VERSION
-    || !hasValidStateShell(state, isValidTransaction, false)) {
+    || state.schemaVersion !== SCHEMA_TWO_VERSION
+    || !hasValidStateShell(state, isValidPreviousTransaction, false)) {
     return null;
   }
   return Object.assign({}, state, {
     schemaVersion: SCHEMA_VERSION,
+    transactions: state.transactions.map(asExpense),
     history: []
   });
 }
 
+function migrateSchemaThree(state) {
+  if (!state
+    || state.schemaVersion !== PREVIOUS_SCHEMA_VERSION
+    || !hasValidStateShell(state, isValidPreviousTransaction, true)
+    || !Array.isArray(state.history)
+    || state.history.length > HISTORY_MONTH_LIMIT
+    || !state.history.every(isValidPreviousArchiveEntry)) {
+    return null;
+  }
+  return Object.assign({}, state, {
+    schemaVersion: SCHEMA_VERSION,
+    transactions: state.transactions.map(asExpense),
+    history: state.history.map((entry) => Object.assign({}, entry, {
+      transactions: entry.transactions.map(asExpense)
+    }))
+  });
+}
+
 function migrateLegacyState(state) {
-  return migrateSchemaTwo(state) || migrateSchemaOne(state);
+  return migrateSchemaThree(state) || migrateSchemaTwo(state) || migrateSchemaOne(state);
 }
 
 async function readState() {

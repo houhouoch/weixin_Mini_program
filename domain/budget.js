@@ -19,15 +19,17 @@ function emptyBudgetErrors() {
   }, {});
 }
 
-function validateBudgetAmounts(values, recordedSpentCents) {
+function validateBudgetAmounts(values, recordedSpentCents, recordedIncomeCents) {
   const errors = emptyBudgetErrors();
   const recorded = recordedSpentCents === undefined ? 0 : recordedSpentCents;
+  const additionalIncome = recordedIncomeCents === undefined ? 0 : recordedIncomeCents;
   const fields = [
     values && values.incomeCents,
     values && values.fixedExpenseCents,
     values && values.savingGoalCents,
     values && values.historicalSpentBeforeTrackingCents,
-    recorded
+    recorded,
+    additionalIncome
   ];
 
   if (fields.some((value) => !Number.isInteger(value) || value < 0)) {
@@ -43,16 +45,17 @@ function validateBudgetAmounts(values, recordedSpentCents) {
   if (income <= 0) errors.income = '本月收入必须大于 0';
   if (fixed > income) errors.fixedExpense = '固定支出不能超过本月收入';
 
-  const savingMaximum = Math.max(income - fixed, 0);
+  const availableIncome = income + additionalIncome;
+  const savingMaximum = Math.max(availableIncome - fixed, 0);
   if (saving > savingMaximum) {
     errors.savingGoal = `扣除固定支出后，最多还能存 ¥${formatCents(savingMaximum)}`;
   }
 
   const requiredByRecordedSpending = fixed + recorded;
-  if (requiredByRecordedSpending > income) {
-    errors.income = `本月收入至少需要 ¥${formatCents(requiredByRecordedSpending)}，才能覆盖固定支出和已记录消费`;
+  if (requiredByRecordedSpending > availableIncome) {
+    errors.income = `固定收入与额外收入合计至少需要 ¥${formatCents(requiredByRecordedSpending)}，才能覆盖固定支出和已记录消费`;
   } else {
-    const historicalMaximum = income - requiredByRecordedSpending;
+    const historicalMaximum = availableIncome - requiredByRecordedSpending;
     if (historical > historicalMaximum) {
       errors.historicalSpentBeforeTracking = `扣除固定支出和已记录消费后，最多可填 ¥${formatCents(historicalMaximum)}`;
     }
@@ -75,10 +78,14 @@ function deriveBudget(budget, transactions, value) {
   const records = (transactions || []).filter((item) =>
     toMonthKey(item.occurredAt) === monthKey
   );
-  const todayRecords = records.filter((item) => toDateKey(item.occurredAt) === todayKey);
-  const beforeTodayRecords = records.filter((item) => toDateKey(item.occurredAt) < todayKey);
+  const incomeRecords = records.filter((item) => item.direction === 'income');
+  const expenseRecords = records.filter((item) => item.direction !== 'income');
+  const todayRecords = expenseRecords.filter((item) => toDateKey(item.occurredAt) === todayKey);
+  const beforeTodayRecords = expenseRecords.filter((item) => toDateKey(item.occurredAt) < todayKey);
+  const recordedIncomeCents = sumAmounts(incomeRecords);
 
   const monthlyFlexibleBudgetCents = budget.incomeCents
+    + recordedIncomeCents
     - budget.fixedExpenseCents
     - budget.savingGoalCents;
   const todaySpentCents = sumAmounts(todayRecords);
@@ -95,7 +102,7 @@ function deriveBudget(budget, transactions, value) {
     todaySuggestedBudgetCents - todaySpentCents,
     0
   );
-  const totalSpentCents = budget.historicalSpentBeforeTrackingCents + sumAmounts(records);
+  const totalSpentCents = budget.historicalSpentBeforeTrackingCents + sumAmounts(expenseRecords);
   const monthlyRemainingCents = monthlyFlexibleBudgetCents - totalSpentCents;
 
   let status = 'normal';
@@ -119,6 +126,7 @@ function deriveBudget(budget, transactions, value) {
     daysRemainingIncludingToday: remainingDays,
     monthlyFlexibleBudgetCents,
     monthlyRemainingCents,
+    recordedIncomeCents,
     recordedSpentBeforeTodayCents,
     spentBeforeTodayCents,
     status,

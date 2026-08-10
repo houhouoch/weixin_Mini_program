@@ -75,6 +75,13 @@ check(Array.isArray(appConfig.pages) && appConfig.pages.length === 1, '仅注册
 check(!Object.prototype.hasOwnProperty.call(appConfig, 'tabBar'), '未配置 tabBar');
 
 const pageJs = fs.readFileSync(path.join(root, 'pages/index/index.js'), 'utf8');
+const dateImportMatch = pageJs.match(
+  /const\s*\{([^}]*)\}\s*=\s*require\('\.\.\/\.\.\/domain\/date'\)/
+);
+check(
+  dateImportMatch && /\bbudgetCycleRange\b/.test(dateImportMatch[1]),
+  '预算周期函数从日期领域模块导入'
+);
 check(!/wx\.(get|set|remove|clear)Storage/.test(pageJs), '页面层不直接访问微信缓存');
 check(!pageJs.includes('wx.getFileSystemManager'), '页面层不直接访问微信文件系统管理器');
 check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');

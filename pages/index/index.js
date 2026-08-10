@@ -1,11 +1,11 @@
 const { deriveBudget, validateBudgetAmounts } = require('../../domain/budget');
 const {
-  budgetCycleRange,
   CATEGORIES,
   categoriesForDirection,
   getCategoryLabel
 } = require('../../domain/categories');
 const {
+  budgetCycleRange,
   daysInMonth,
   daysSince,
   formatChineseDate,

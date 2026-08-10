@@ -83,7 +83,9 @@ check(pageJs.includes("query: 'from=share'"), '朋友圈 query 只包含来源�
 check(!/openid|unionid|avatar|nickName/i.test(pageJs), '页面分享逻辑不包含身份字段');
 check(pageJs.includes('handleCategorySelect'), '页面支持选择消费分类');
 check(pageJs.includes('handleNoteInput'), '页面支持填写消费用途');
-check(pageJs.includes('handleReviewPeriod'), '页面支持日/月/年回看切换');
+check(pageJs.includes('handleReviewPeriod'), '页面支持日/月/年/自定义回看切换');
+check(pageJs.includes('handleReviewRangeStartChange'), '页面支持选择统计开始日期');
+check(pageJs.includes('handleReviewRangeEndChange'), '页面支持选择统计结束日期');
 check(pageJs.includes('openThemeDrawer'), '页面支持打开主题工作室');
 check(pageJs.includes('saveThemeSettings'), '页面支持保存安全主题设置');
 check(pageJs.includes('toggleSection'), '页面支持独立折叠非核心模块');
@@ -98,11 +100,13 @@ check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel �
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
 
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
+check(wxml.includes("reviewPeriod === 'custom'"), '自定义统计只在对应回看模式展示');
+check(wxml.includes('mode="date"') && wxml.includes('reviewRangeStartKey') && wxml.includes('reviewRangeEndKey'), '页面使用原生日期选择器设置统计区间');
 check(wxml.includes('open-type="share"'), '好友分享使用 open-type="share"');
 check(wxml.includes('朋友圈 · 右上角'), '提供朋友圈右上角菜单引导');
 check(wxml.includes('这笔花在哪儿'), '记录区先回答消费去向');
 check(wxml.includes('maxlength="20"'), '用途说明限制为 20 个字符');
-check(/id: 'day'[\s\S]*id: 'month'[\s\S]*id: 'year'/.test(pageJs), '回看区提供日/月/年三个粒度');
+check(/id: 'day'[\s\S]*id: 'month'[\s\S]*id: 'year'[\s\S]*id: 'custom'/.test(pageJs), '回看区提供日/月/年/自定义四种范围');
 check(wxml.includes('警示黄与超支红保持固定'), '主题抽屉说明警示语义色不可覆盖');
 check(
   ['review', 'composer', 'history'].every((section) => wxml.includes(`data-section="${section}"`)),

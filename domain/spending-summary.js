@@ -1,8 +1,8 @@
 const { getCategoryLabel } = require('./categories');
-const { daysInMonth, toDateKey, toMonthKey } = require('./date');
+const { daysInMonth, parseLocalDateKey, toDateKey, toMonthKey } = require('./date');
 const { formatCents } = require('./money');
 
-const PERIODS = Object.freeze(['day', 'month', 'year']);
+const PERIODS = Object.freeze(['day', 'month', 'year', 'custom']);
 
 function asDate(value) {
   return value instanceof Date ? value : new Date(value);
@@ -16,6 +16,20 @@ function startOfDay(value) {
 function addDays(value, amount) {
   const date = startOfDay(value);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount);
+}
+
+function calendarDayDistance(start, end) {
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endUtc - startUtc) / 86400000);
+}
+
+function compactDateLabel(date) {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function chineseDateLabel(date) {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function sumAmounts(records) {
@@ -198,11 +212,61 @@ function deriveYearSummary(state, now) {
   return summaryShell('year', metrics, chart, insight, scope);
 }
 
-function deriveSpendingSummary(state, period, value) {
+function deriveCustomSummary(state, now, range) {
+  const start = parseLocalDateKey(range && range.startDateKey);
+  const end = parseLocalDateKey(range && range.endDateKey);
+  if (!start || !end || start > end || end > now) {
+    throw new Error('统计时间段无效');
+  }
+
+  const totalDays = calendarDayDistance(start, end) + 1;
+  const startKey = toDateKey(start);
+  const endKey = toDateKey(end);
+  const records = allActualTransactions(state).filter((item) => {
+    const dateKey = toDateKey(item.occurredAt);
+    return dateKey >= startKey && dateKey <= endKey;
+  });
+  const total = sumAmounts(records);
+  const bucketCount = Math.min(7, totalDays);
+  const chart = Array.from({ length: bucketCount }, (_, index) => {
+    const startOffset = Math.floor(index * totalDays / bucketCount);
+    const endOffset = Math.floor((index + 1) * totalDays / bucketCount) - 1;
+    const bucketStart = addDays(start, startOffset);
+    const bucketEnd = addDays(start, endOffset);
+    return {
+      label: compactDateLabel(bucketStart),
+      fullLabel: startOffset === endOffset
+        ? chineseDateLabel(bucketStart)
+        : `${chineseDateLabel(bucketStart)}至${chineseDateLabel(bucketEnd)}`,
+      amountCents: 0
+    };
+  });
+  records.forEach((item) => {
+    const occurred = parseLocalDateKey(toDateKey(item.occurredAt));
+    const offset = calendarDayDistance(start, occurred);
+    const bucket = Math.min(bucketCount - 1, Math.floor(offset * bucketCount / totalDays));
+    chart[bucket].amountCents += item.amountCents;
+  });
+
+  const metrics = [
+    metric('区间支出', formatMetric(total)),
+    metric('日均', formatMetric(Math.floor(total / totalDays))),
+    metric('支出笔数', `${records.length}笔`)
+  ];
+  const top = topCategory(records);
+  const insight = top
+    ? `区间花得最多：${getCategoryLabel(top.categoryId)} ${formatMetric(top.amountCents)}`
+    : '该时间段没有支出记录';
+  const scope = `${chineseDateLabel(start)} 至 ${chineseDateLabel(end)} · 共${totalDays}天 · 不含收入和启用前汇总`;
+  return summaryShell('custom', metrics, chart, insight, scope);
+}
+
+function deriveSpendingSummary(state, period, value, range) {
   if (!state || PERIODS.indexOf(period) < 0) {
     throw new Error('消费回看参数无效');
   }
   const now = startOfDay(value || new Date());
+  if (period === 'custom') return deriveCustomSummary(state, now, range);
   if (period === 'month') return deriveMonthSummary(state, now);
   if (period === 'year') return deriveYearSummary(state, now);
   return deriveDaySummary(state, now);

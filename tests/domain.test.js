@@ -340,6 +340,59 @@ test('day and month summaries use only real dated records for trends', () => {
   assert.match(month.scopeText, /趋势不含该汇总/);
 });
 
+test('custom spending summary includes both boundary dates and excludes income and baselines', () => {
+  const now = new Date(2026, 7, 9, 12);
+  const state = {
+    monthKey: '2026-08',
+    budget: budget({ historicalSpentBeforeTrackingCents: 5000 }),
+    transactions: [
+      { id: 'aug-01-food', amountCents: 1500, categoryId: 'food', occurredAt: new Date(2026, 7, 1, 8).getTime() },
+      { id: 'aug-09-food', amountCents: 500, categoryId: 'food', occurredAt: new Date(2026, 7, 9, 18).getTime() },
+      { id: 'aug-income', amountCents: 50000, categoryId: 'income_side_job', direction: 'income', occurredAt: new Date(2026, 7, 5, 12).getTime() }
+    ],
+    history: [{
+      monthKey: '2026-07',
+      historicalSpentBeforeTrackingCents: 3000,
+      transactions: [
+        { id: 'jul-31-train', amountCents: 400, categoryId: 'transport', occurredAt: new Date(2026, 6, 31, 23).getTime() },
+        { id: 'jul-30-outside', amountCents: 9999, categoryId: 'shopping', occurredAt: new Date(2026, 6, 30, 23).getTime() }
+      ]
+    }]
+  };
+
+  const custom = deriveSpendingSummary(state, 'custom', now, {
+    startDateKey: '2026-07-31',
+    endDateKey: '2026-08-09'
+  });
+  assert.equal(custom.period, 'custom');
+  assert.deepEqual(custom.metrics.map((item) => item.value), ['¥24', '¥2.40', '3笔']);
+  assert.equal(custom.chart.length, 7);
+  assert.equal(custom.chart.reduce((sum, item) => sum + item.amountCents, 0), 2400);
+  assert.match(custom.insightText, /餐饮 ¥20/);
+  assert.match(custom.scopeText, /共10天/);
+  assert.match(custom.scopeText, /不含收入和启用前汇总/);
+
+  const empty = deriveSpendingSummary(state, 'custom', now, {
+    startDateKey: '2026-08-02',
+    endDateKey: '2026-08-02'
+  });
+  assert.deepEqual(empty.metrics.map((item) => item.value), ['¥0', '¥0', '0笔']);
+  assert.match(empty.insightText, /没有支出记录/);
+});
+
+test('custom spending summary rejects reversed or future date ranges', () => {
+  const state = { monthKey: '2026-08', budget: budget(), transactions: [], history: [] };
+  const now = new Date(2026, 7, 9, 12);
+  assert.throws(() => deriveSpendingSummary(state, 'custom', now, {
+    startDateKey: '2026-08-09',
+    endDateKey: '2026-08-01'
+  }), /统计时间段无效/);
+  assert.throws(() => deriveSpendingSummary(state, 'custom', now, {
+    startDateKey: '2026-08-01',
+    endDateKey: '2026-08-10'
+  }), /统计时间段无效/);
+});
+
 test('all theme presets keep readable contrast across the full safe tuning range', () => {
   getThemePresets('forest').forEach((preset) => {
     for (let hueShift = -30; hueShift <= 30; hueShift += 1) {

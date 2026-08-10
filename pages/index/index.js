@@ -142,11 +142,23 @@ function toTransactionView(item, now) {
 }
 
 const INITIAL_THEME = resolveTheme(DEFAULT_THEME_SETTINGS);
-const INITIAL_DATE_KEY = toDateKey(new Date());
+const INITIAL_NOW = new Date();
+const INITIAL_DATE_KEY = toDateKey(INITIAL_NOW);
+const INITIAL_REVIEW_START_KEY = toDateKey(new Date(
+  INITIAL_NOW.getFullYear(),
+  INITIAL_NOW.getMonth(),
+  1
+));
+const REVIEW_MIN_DATE_KEY = toDateKey(new Date(
+  INITIAL_NOW.getFullYear(),
+  INITIAL_NOW.getMonth() - 36,
+  1
+));
 const REVIEW_PERIODS = Object.freeze([
   Object.freeze({ id: 'day', label: '日' }),
   Object.freeze({ id: 'month', label: '月' }),
-  Object.freeze({ id: 'year', label: '年' })
+  Object.freeze({ id: 'year', label: '年' }),
+  Object.freeze({ id: 'custom', label: '自定义' })
 ]);
 
 Page({
@@ -194,6 +206,10 @@ Page({
     reviewLoading: false,
     reviewPeriod: 'day',
     reviewPeriods: REVIEW_PERIODS,
+    reviewRangeEndKey: INITIAL_DATE_KEY,
+    reviewRangeMaxKey: INITIAL_DATE_KEY,
+    reviewRangeMinKey: REVIEW_MIN_DATE_KEY,
+    reviewRangeStartKey: INITIAL_REVIEW_START_KEY,
     reviewSummary: null,
     result: null,
     shareTitle: '今天还能花｜开始我的收支记录',
@@ -386,7 +402,11 @@ Page({
     try {
       const reviewSummary = await getSpendingSummary(
         this.data.reviewPeriod,
-        now || new Date()
+        now || new Date(),
+        this.data.reviewPeriod === 'custom' ? {
+          startDateKey: this.data.reviewRangeStartKey,
+          endDateKey: this.data.reviewRangeEndKey
+        } : null
       );
       if (requestId !== this._reviewReadId) return;
       this.setData({ reviewSummary });
@@ -404,6 +424,28 @@ Page({
     if (reviewPeriod === this.data.reviewPeriod) return;
     this.setData({ reviewPeriod });
     this.refreshReview(new Date());
+  },
+
+  handleReviewRangeStartChange(event) {
+    const reviewRangeStartKey = event.detail.value;
+    if (!parseLocalDateKey(reviewRangeStartKey)) return;
+    const reviewRangeEndKey = reviewRangeStartKey > this.data.reviewRangeEndKey
+      ? reviewRangeStartKey
+      : this.data.reviewRangeEndKey;
+    this.setData({ reviewRangeStartKey, reviewRangeEndKey }, () => {
+      if (this.data.reviewPeriod === 'custom') this.refreshReview(new Date());
+    });
+  },
+
+  handleReviewRangeEndChange(event) {
+    const reviewRangeEndKey = event.detail.value;
+    if (!parseLocalDateKey(reviewRangeEndKey)) return;
+    const reviewRangeStartKey = reviewRangeEndKey < this.data.reviewRangeStartKey
+      ? reviewRangeEndKey
+      : this.data.reviewRangeStartKey;
+    this.setData({ reviewRangeStartKey, reviewRangeEndKey }, () => {
+      if (this.data.reviewPeriod === 'custom') this.refreshReview(new Date());
+    });
   },
 
   async refreshHistoryDetail() {

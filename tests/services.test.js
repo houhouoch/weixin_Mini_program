@@ -655,6 +655,15 @@ test('imported cross-day, cross-month and cross-year data stays in the correct r
   assert.equal(year2025.metrics[0].value, '¥88');
   assert.equal(year2025.chart[11].amountCents, 8800);
 
+  const custom = await getSpendingSummary('custom', new Date(2026, 7, 9, 12), {
+    startDateKey: '2026-07-31',
+    endDateKey: '2026-08-09'
+  });
+  assert.deepEqual(custom.metrics.map((item) => item.value), ['¥87', '¥8.70', '3笔']);
+  assert.equal(custom.chart.length, 7);
+  assert.equal(custom.chart.reduce((sum, item) => sum + item.amountCents, 0), 8700);
+  assert.doesNotMatch(custom.scopeText, /启用前汇总 ¥/);
+
   const oldYearDetail = await listTransactions({ dateKey: '2025-12-31' });
   assert.equal(oldYearDetail.length, 1);
   assert.equal(oldYearDetail[0].note, '跨年晚餐');

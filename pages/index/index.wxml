@@ -73,7 +73,7 @@
       >
         <view class="section-toggle__copy">
           <text class="review-title">消费回看</text>
-          <text class="section-toggle__summary">日 / 月 / 年真实趋势</text>
+          <text class="section-toggle__summary">日 / 月 / 年 / 自定义</text>
         </view>
         <text class="section-toggle__action">{{sections.review ? '收起' : '展开'}}</text>
       </button>
@@ -90,6 +90,38 @@
             bindtap="handleReviewPeriod"
             aria-label="查看{{item.label}}消费回看"
           >{{item.label}}</button>
+        </view>
+
+        <view class="review-range" wx:if="{{reviewPeriod === 'custom'}}">
+          <picker
+            class="review-range__picker"
+            mode="date"
+            value="{{reviewRangeStartKey}}"
+            start="{{reviewRangeMinKey}}"
+            end="{{reviewRangeEndKey}}"
+            bindchange="handleReviewRangeStartChange"
+            aria-label="选择支出统计开始日期"
+          >
+            <view class="review-range__field">
+              <text class="review-range__label">开始日期</text>
+              <text class="review-range__value">{{reviewRangeStartKey}}</text>
+            </view>
+          </picker>
+          <text class="review-range__separator">至</text>
+          <picker
+            class="review-range__picker"
+            mode="date"
+            value="{{reviewRangeEndKey}}"
+            start="{{reviewRangeStartKey}}"
+            end="{{reviewRangeMaxKey}}"
+            bindchange="handleReviewRangeEndChange"
+            aria-label="选择支出统计结束日期"
+          >
+            <view class="review-range__field">
+              <text class="review-range__label">结束日期</text>
+              <text class="review-range__value">{{reviewRangeEndKey}}</text>
+            </view>
+          </picker>
         </view>
 
         <view class="review-loading" wx:if="{{reviewLoading}}" aria-role="status">正在整理本地记录…</view>

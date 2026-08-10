@@ -421,6 +421,53 @@
   color: var(--theme-on-primary, #FFF9EC);
 }
 
+.review-range {
+  display: flex;
+  align-items: center;
+  margin-top: 18rpx;
+}
+
+.review-range__picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-range__field {
+  box-sizing: border-box;
+  min-height: 100rpx;
+  padding: 16rpx 18rpx;
+  border: 2rpx solid var(--theme-border, #E5D9BF);
+  border-radius: 20rpx;
+  background: var(--theme-page, #F5EBD4);
+}
+
+.review-range__label,
+.review-range__value {
+  display: block;
+}
+
+.review-range__label {
+  color: var(--theme-muted, #6B7369);
+  font-size: 19rpx;
+}
+
+.review-range__value {
+  margin-top: 4rpx;
+  overflow: hidden;
+  color: var(--theme-text, #123F35);
+  font-size: 24rpx;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-range__separator {
+  flex: 0 0 44rpx;
+  color: var(--theme-muted, #6B7369);
+  font-size: 20rpx;
+  text-align: center;
+}
+
 .review-loading,
 .review-error {
   box-sizing: border-box;

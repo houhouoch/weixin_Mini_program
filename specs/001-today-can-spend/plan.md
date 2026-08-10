@@ -6,7 +6,7 @@
 pages/index (展示与交互)
   -> services/budget-store (预算与月份生命周期，Promise)
   -> services/transactions (仅 addTransaction/listTransactions，Promise)
-  -> services/spending-summary (日/月/年本地聚合，Promise)
+  -> services/spending-summary (日/月/年/自定义区间本地聚合，Promise)
   -> services/theme-store (预设与安全微调，Promise)
   -> services/ledger-export (本地 XLSX 生成与文件写入，Promise)
   -> services/wechat-bill-import (账单解析、预览与已有流水去重，Promise)
@@ -38,7 +38,7 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 - `infrastructure/storage.js`：Promise 化微信缓存。
 - `services/budget-store.js`：设置、读取、重置、跨月。
 - `services/transactions.js`：添加、修改、删除命令与当前/归档按日列表。
-- `services/spending-summary.js`：按日/月/年聚合真实本地记录。
+- `services/spending-summary.js`：按日/月/年/自定义时间段聚合真实本地记录。
 - `services/theme-store.js`：主题预设、安全微调和默认恢复。
 - `domain/ledger-workbook.js`：将当前与归档逐笔记录生成标准 XLSX。
 - `infrastructure/file-system.js`：Promise 化小程序用户目录写入、UTF-8/GB18030 文本与 XLSX 条目读取。
@@ -100,6 +100,14 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 3. 预算只用收入增加可用额度；今日已花、消费回看和分类排行只聚合支出。
 4. 在快速记录与编辑抽屉加入可访问的收支分段入口，历史显示正负号及收支合计。
 5. Excel 增加收支列和双合计，补齐领域、服务、迁移与静态结构验证。
+
+## V1.8 实施顺序
+
+1. 扩展消费汇总纯函数，校验并聚合包含首尾日的自定义时间段。
+2. 在现有消费回看折叠区加入原生起止日期选择器，不新增页面和存储字段。
+3. 展示区间支出总额、自然日日均、支出笔数、最高分类及最多 7 段趋势。
+4. 补充跨月、收入排除、启用前汇总排除和非法日期自动化测试。
+5. 更新验收记录，并执行 Node、结构和微信开发者工具验证。
 
 ## 验证策略
 

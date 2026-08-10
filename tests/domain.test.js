@@ -368,6 +368,18 @@ test('custom spending summary includes both boundary dates and excludes income a
   assert.deepEqual(custom.metrics.map((item) => item.value), ['¥24', '¥2.40', '3笔']);
   assert.equal(custom.chart.length, 7);
   assert.equal(custom.chart.reduce((sum, item) => sum + item.amountCents, 0), 2400);
+  assert.deepEqual(custom.categoryBreakdown.map((item) => ({
+    amountCents: item.amountCents,
+    categoryId: item.categoryId,
+    count: item.count,
+    percent: item.percent
+  })), [{ amountCents: 2000, categoryId: 'food', count: 2, percent: 83 }, {
+    amountCents: 400,
+    categoryId: 'transport',
+    count: 1,
+    percent: 17
+  }]);
+  assert.equal(custom.recordCount, 3);
   assert.match(custom.insightText, /餐饮 ¥20/);
   assert.match(custom.scopeText, /共10天/);
   assert.match(custom.scopeText, /不含收入和启用前汇总/);
@@ -377,6 +389,7 @@ test('custom spending summary includes both boundary dates and excludes income a
     endDateKey: '2026-08-02'
   });
   assert.deepEqual(empty.metrics.map((item) => item.value), ['¥0', '¥0', '0笔']);
+  assert.deepEqual(empty.categoryBreakdown, []);
   assert.match(empty.insightText, /没有支出记录/);
 });
 

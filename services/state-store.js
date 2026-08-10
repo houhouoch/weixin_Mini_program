@@ -29,6 +29,16 @@ function isValidBudget(budget) {
 }
 
 function isValidTransaction(transaction) {
+  const hasImportBatchId = transaction
+    && Object.prototype.hasOwnProperty.call(transaction, 'importBatchId');
+  const hasImportedAt = transaction
+    && Object.prototype.hasOwnProperty.call(transaction, 'importedAt');
+  const validImportMetadata = !hasImportBatchId && !hasImportedAt
+    || (hasImportBatchId
+      && hasImportedAt
+      && typeof transaction.importBatchId === 'string'
+      && /^[a-z0-9-]{1,100}$/.test(transaction.importBatchId)
+      && Number.isFinite(transaction.importedAt));
   return Boolean(
     transaction
     && typeof transaction.id === 'string'
@@ -41,6 +51,7 @@ function isValidTransaction(transaction) {
     && typeof transaction.note === 'string'
     && transaction.note.length <= NOTE_MAX_LENGTH
     && Number.isFinite(transaction.occurredAt)
+    && validImportMetadata
   );
 }
 
@@ -241,6 +252,7 @@ module.exports = {
   archiveCurrentState,
   clearState,
   createState,
+  isValidState,
   readState,
   saveState
 };

@@ -9,6 +9,7 @@ pages/index (展示与交互)
   -> services/spending-summary (日/月/年/自定义区间本地聚合，Promise)
   -> services/theme-store (预设与安全微调，Promise)
   -> services/ledger-export (本地 XLSX 生成与文件写入，Promise)
+  -> services/data-backup (完整 JSON 备份、预览与恢复，Promise)
   -> services/wechat-bill-import (账单解析、预览与已有流水去重，Promise)
   -> services/analytics (trackEvent 隐私过滤)
   -> domain/categories (分类白名单与展示名)
@@ -43,6 +44,7 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 - `domain/ledger-workbook.js`：将当前与归档逐笔记录生成标准 XLSX。
 - `infrastructure/file-system.js`：Promise 化小程序用户目录写入、UTF-8/GB18030 文本与 XLSX 条目读取。
 - `services/ledger-export.js`：读取本地状态并交付 Excel 文件。
+- `services/data-backup.js`：生成、校验、预览和恢复完整本地 JSON 备份。
 - `domain/wechat-bill.js`：CSV/XLSX 表头发现、支出过滤、分类推断与稳定指纹。
 - `domain/alipay-bill.js`：支付宝 CSV 状态过滤、还款排除、退款配对、分类与稳定指纹。
 - `domain/gb18030.js`：无运行时依赖解码支付宝官方 CSV。
@@ -108,6 +110,14 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 3. 展示区间支出总额、自然日日均、支出笔数、最高分类及最多 7 段趋势。
 4. 补充跨月、收入排除、启用前汇总排除和非法日期自动化测试。
 5. 更新验收记录，并执行 Node、结构和微信开发者工具验证。
+
+## V1.9 实施顺序
+
+1. 修正负余额展示语义，扩展自定义统计分类构成与区间流水筛选。
+2. 为新导入交易持久化本地批次元数据，并通过现有交易 API 实现整批撤销。
+3. 新增完整 JSON 备份领域格式、文件交付、恢复校验和失败回滚。
+4. 在现有折叠区加入按需展开的下钻、批次管理和数据备份入口。
+5. 补充自动化、结构、开发者工具与 Git 收口验证。
 
 ## 验证策略
 

@@ -55,7 +55,8 @@
     <view class="budget-rail budget-rail--{{statusTone}}">
       <view class="budget-rail__labels">
         <text>今天已花 ¥{{result.todaySpentText}}</text>
-        <text>本月可用 ¥{{result.monthlyRemainingText}}</text>
+        <text wx:if="{{result.monthlyRemainingNegative}}">本月超支 ¥{{result.monthlyOverspentText}}</text>
+        <text wx:else>本月可用 ¥{{result.monthlyRemainingText}}</text>
       </view>
       <view class="budget-rail__track">
         <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
@@ -150,6 +151,68 @@
 
           <text class="review-insight">{{reviewSummary.insightText}}</text>
           <text class="review-scope">{{reviewSummary.scopeText}}</text>
+
+          <block wx:if="{{reviewPeriod === 'custom'}}">
+            <view class="review-breakdown" wx:if="{{reviewSummary.categoryBreakdown.length}}">
+              <view class="review-breakdown__header">
+                <text class="review-breakdown__title">支出分类</text>
+                <text class="review-breakdown__hint">点击分类查看对应流水</text>
+              </view>
+              <button
+                class="review-category"
+                wx:for="{{reviewSummary.categoryBreakdown}}"
+                wx:key="categoryId"
+                data-category="{{item.categoryId}}"
+                data-label="{{item.categoryLabel}}"
+                bindtap="handleReviewCategoryDetail"
+                aria-label="查看{{item.categoryLabel}}{{item.count}}笔支出明细"
+              >
+                <view class="review-category__copy">
+                  <text class="review-category__name">{{item.categoryLabel}}</text>
+                  <text class="review-category__meta">{{item.count}}笔 · {{item.percent}}%</text>
+                </view>
+                <text class="review-category__amount">{{item.amountText}}</text>
+              </button>
+            </view>
+
+            <button
+              class="review-detail-toggle"
+              bindtap="toggleReviewDetails"
+              disabled="{{reviewSummary.recordCount === 0}}"
+            >{{reviewDetailVisible ? '收起区间流水' : '查看全部区间流水（' + reviewSummary.recordCount + '笔）'}}</button>
+
+            <view class="review-detail" wx:if="{{reviewDetailVisible}}">
+              <view class="review-detail__header">
+                <text class="review-detail__title">{{reviewDetailCategoryLabel}}</text>
+                <button
+                  wx:if="{{reviewDetailCategoryId}}"
+                  class="review-detail__all"
+                  bindtap="clearReviewCategoryDetail"
+                >关闭筛选</button>
+              </view>
+              <view class="review-loading" wx:if="{{reviewDetailLoading}}">正在读取区间流水…</view>
+              <view class="review-error" wx:elif="{{reviewDetailError}}">{{reviewDetailError}}</view>
+              <view class="empty-records" wx:elif="{{reviewTransactions.length === 0}}">
+                <text class="empty-records__title">这个筛选下没有支出</text>
+              </view>
+              <view class="record-list review-record-list" wx:else>
+                <view class="record-row record-row--expense" wx:for="{{reviewTransactions}}" wx:key="id">
+                  <text class="record-tag record-tag--{{item.categoryId}}">{{item.categoryLabel}}</text>
+                  <view class="record-main">
+                    <text class="record-purpose">{{item.purposeText}}</text>
+                    <text class="record-time">{{item.occurredAtText}}</text>
+                  </view>
+                  <view class="record-tail">
+                    <text class="record-amount record-amount--expense">- ¥{{item.amountText}}</text>
+                    <view class="record-actions">
+                      <button class="edit-record-button" data-id="{{item.id}}" bindtap="openEditTransaction">修改</button>
+                      <button class="delete-button" data-id="{{item.id}}" bindtap="handleDeleteTransaction">删除</button>
+                    </view>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </block>
         </block>
       </view>
     </view>
@@ -350,6 +413,21 @@
             >{{isBillImportSaving ? '正在导入…' : '确认导入 ' + billImportPreview.importCount + ' 笔'}}</button>
           </view>
           <text class="bill-import__privacy">不会上传账单，不保存微信或支付宝交易单号原文；导入后仍可按日期查看、修改或删除。</text>
+          <view class="import-batches" wx:if="{{importBatches.length}}">
+            <text class="import-batches__title">最近可撤销的导入</text>
+            <view class="import-batch" wx:for="{{importBatches}}" wx:key="id">
+              <view class="import-batch__copy">
+                <text class="import-batch__name">{{item.sourceLabel}} · {{item.count}}笔</text>
+                <text class="import-batch__meta">{{item.dateFrom}} 至 {{item.dateTo}} · {{item.importedAtText}}</text>
+              </view>
+              <button
+                class="import-batch__undo"
+                data-id="{{item.id}}"
+                bindtap="handleUndoImportBatch"
+                disabled="{{isImportBatchUndoing}}"
+              >撤销</button>
+            </view>
+          </view>
         </view>
         <view class="ledger-export">
           <view class="ledger-export__copy">
@@ -376,6 +454,47 @@
           </view>
           <text class="field-error ledger-export__error" aria-role="alert" wx:if="{{exportError}}">{{exportError}}</text>
           <text class="ledger-export__privacy">只在本机生成，不含启用前汇总、OPENID 或身份信息。</text>
+        </view>
+        <view class="ledger-export data-backup">
+          <view class="ledger-export__copy">
+            <text class="ledger-export__title">完整数据备份与恢复</text>
+            <text class="ledger-export__helper">JSON 备份可恢复预算、当前与历史流水、导入批次和主题。Excel 仅用于查看，不能恢复。</text>
+          </view>
+          <view class="ledger-export__actions">
+            <button
+              class="ledger-export__button ledger-export__button--primary"
+              bindtap="handleCreateBackup"
+              disabled="{{isBackingUp || isRestoringBackup}}"
+              loading="{{isBackingUp}}"
+            >{{isBackingUp ? '正在备份…' : '生成完整备份'}}</button>
+            <button
+              wx:if="{{backupFilePath}}"
+              class="ledger-export__button"
+              bindtap="shareBackupFile"
+            >转发备份文件</button>
+            <button
+              wx:if="{{backupFilePath && canSaveToDisk}}"
+              class="ledger-export__button"
+              bindtap="saveBackupToDisk"
+            >保存备份到电脑</button>
+            <button
+              class="ledger-export__button"
+              bindtap="chooseBackupFile"
+              disabled="{{isRestoringBackup || isBackingUp}}"
+            >选择备份文件恢复</button>
+          </view>
+          <view class="backup-preview" wx:if="{{backupPreview}}">
+            <text class="backup-preview__title">已验证：{{backupPreview.fileName}}</text>
+            <text class="backup-preview__meta">{{backupPreview.exportedAtText}} · {{backupPreview.monthFrom}} 至 {{backupPreview.monthTo}} · {{backupPreview.recordCount}}笔</text>
+            <button
+              class="backup-preview__restore"
+              bindtap="confirmRestoreBackup"
+              disabled="{{isRestoringBackup}}"
+              loading="{{isRestoringBackup}}"
+            >{{isRestoringBackup ? '正在恢复…' : '确认覆盖并恢复'}}</button>
+          </view>
+          <text class="field-error ledger-export__error" aria-role="alert" wx:if="{{backupError}}">{{backupError}}</text>
+          <text class="ledger-export__privacy">备份包含全部流水，只在本机生成、不上传；请只保存或转发给自己。恢复前会完整校验并二次确认。</text>
         </view>
         <text class="receipt-privacy">仅保存在本机 · 当前月纠错会重算额度</text>
       </view>

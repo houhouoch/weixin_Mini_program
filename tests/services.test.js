@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const { setStorageAdapterForTests } = require('../infrastructure/storage');
 const { decodeBillText, readZipTextEntries } = require('../infrastructure/file-system');
 const budgetStore = require('../services/budget-store');
+const {
+  createDataBackup,
+  previewDataBackup,
+  restoreDataBackup
+} = require('../services/data-backup');
 const { getSpendingSummary } = require('../services/spending-summary');
 const themeStore = require('../services/theme-store');
 const { readState } = require('../services/state-store');
@@ -213,6 +218,85 @@ test('wechat bill import writes current and archived months and remains idempote
   assert.equal(second.importedCount, 0);
   assert.equal(second.duplicateCount, 2);
   assert.equal((await listTransactions({ all: true })).length, 2);
+});
+
+test('import batches can be filtered, survive edits and undo across current and archived months', async () => {
+  const now = new Date(2026, 7, 9, 22);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0
+  }, now);
+  await addTransaction({
+    action: 'create',
+    commandId: 'manual-before-import',
+    amountCents: 900,
+    categoryId: 'food',
+    note: '手工记录',
+    occurredAt: new Date(2026, 7, 2, 8).getTime()
+  });
+  await addTransaction({
+    action: 'import',
+    commandId: 'wechat-import-batch-a',
+    importedAt: new Date(2026, 7, 10, 9).getTime(),
+    source: 'wechat',
+    transactions: [{
+      id: 'wechat-batch-current',
+      amountCents: 1500,
+      categoryId: 'food',
+      note: '咖啡',
+      occurredAt: new Date(2026, 7, 9, 8).getTime()
+    }, {
+      id: 'wechat-batch-history',
+      amountCents: 400,
+      categoryId: 'transport',
+      note: '地铁',
+      occurredAt: new Date(2026, 6, 31, 18).getTime()
+    }]
+  });
+
+  let batches = await listTransactions({ importBatches: true });
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0], {
+    id: 'wechat-import-batch-a',
+    importedAt: new Date(2026, 7, 10, 9).getTime(),
+    source: 'wechat',
+    sourceLabel: '微信支付',
+    count: 2,
+    dateFrom: '2026-07-31',
+    dateTo: '2026-08-09'
+  });
+
+  const ranged = await listTransactions({
+    startDateKey: '2026-07-31',
+    endDateKey: '2026-08-09',
+    direction: 'expense',
+    categoryId: 'food'
+  });
+  assert.deepEqual(ranged.map((item) => item.id), ['wechat-batch-current', 'manual-before-import']);
+
+  await addTransaction({
+    action: 'update',
+    commandId: 'edit-imported-record',
+    transactionId: 'wechat-batch-current',
+    amountCents: 1600,
+    categoryId: 'food',
+    direction: 'expense',
+    note: '改过的咖啡',
+    occurredAt: new Date(2026, 7, 9, 8).getTime()
+  });
+  assert.equal((await listTransactions({ importBatches: true }))[0].count, 2);
+
+  const undone = await addTransaction({
+    action: 'undoImport',
+    commandId: 'undo-import-batch-a',
+    importBatchId: 'wechat-import-batch-a'
+  });
+  assert.equal(undone.removedCount, 2);
+  assert.deepEqual((await listTransactions({ all: true })).map((item) => item.id), ['manual-before-import']);
+  batches = await listTransactions({ importBatches: true });
+  assert.deepEqual(batches, []);
 });
 
 test('wechat bill import skips future and records older than 36 months', async () => {
@@ -689,6 +773,152 @@ test('theme preference persists independently and resolves safe contrast', async
   const reset = await themeStore.resetTheme();
   assert.equal(reset.settings.presetId, 'forest');
   assert.equal(reset.settings.hueShift, 0);
+});
+
+test('complete JSON backup previews and restores state, import metadata and theme', async () => {
+  const originalWx = global.wx;
+  const files = new Map();
+  global.wx = {
+    env: { USER_DATA_PATH: 'wxfile://user' },
+    getFileSystemManager() {
+      return {
+        writeFile(options) {
+          files.set(options.filePath, options.data);
+          options.success();
+        },
+        readFile(options) {
+          if (!files.has(options.filePath)) {
+            options.fail({ errMsg: 'readFile:fail not found' });
+            return;
+          }
+          options.success({ data: files.get(options.filePath) });
+        }
+      };
+    }
+  };
+  try {
+    const now = new Date(2026, 7, 10, 9, 30);
+    await budgetStore.saveBudget({
+      incomeCents: 800000,
+      fixedExpenseCents: 400000,
+      savingGoalCents: 100000,
+      historicalSpentBeforeTrackingCents: 0
+    }, now);
+    await addTransaction({
+      action: 'import',
+      commandId: 'alipay-backup-batch',
+      importedAt: now.getTime(),
+      source: 'alipay',
+      transactions: [{
+        id: 'alipay-backup-record',
+        amountCents: 1888,
+        categoryId: 'food',
+        direction: 'expense',
+        note: '午餐',
+        occurredAt: now.getTime()
+      }]
+    });
+    await themeStore.saveTheme({ presetId: 'midnight', hueShift: 2, warmth: 0, brightness: 0 });
+    const backup = await createDataBackup(now);
+    assert.match(backup.fileName, /完整备份-20260810-0930\.json$/);
+    const backupText = files.get(backup.filePath);
+    assert.doesNotMatch(backupText, /openid|unionid|nickname/i);
+
+    const preview = await previewDataBackup({ name: backup.fileName, path: backup.filePath });
+    assert.equal(preview.recordCount, 1);
+    assert.equal(preview.monthFrom, '2026-08');
+    assert.equal(preview.monthTo, '2026-08');
+
+    await addTransaction({
+      action: 'create',
+      commandId: 'after-backup-record',
+      amountCents: 999,
+      categoryId: 'other',
+      note: '备份后新增',
+      occurredAt: now.getTime()
+    });
+    await themeStore.saveTheme({ presetId: 'coral', hueShift: 0, warmth: 0, brightness: 0 });
+    await restoreDataBackup(backup.filePath);
+    assert.deepEqual((await listTransactions({ all: true })).map((item) => item.id), ['alipay-backup-record']);
+    assert.equal((await listTransactions({ importBatches: true }))[0].id, 'alipay-backup-batch');
+    assert.equal((await themeStore.loadTheme()).settings.presetId, 'midnight');
+
+    files.set('wxfile://user/not-backup.json', '{"fileType":"wrong"}');
+    await assert.rejects(previewDataBackup({
+      name: 'not-backup.json',
+      path: 'wxfile://user/not-backup.json'
+    }), /不是“今天还能花”/);
+  } finally {
+    global.wx = originalWx;
+  }
+});
+
+test('backup restore keeps the previous state and theme when state persistence fails', async () => {
+  const adapter = makeAdapter();
+  let failStateWrites = false;
+  const originalSetStorage = adapter.setStorage.bind(adapter);
+  adapter.setStorage = (options) => {
+    if (failStateWrites && options.key === 'today-can-spend:v1') {
+      options.fail({ errMsg: 'setStorage:fail quota' });
+      return;
+    }
+    originalSetStorage(options);
+  };
+  setStorageAdapterForTests(adapter);
+  const originalWx = global.wx;
+  const files = new Map();
+  global.wx = {
+    env: { USER_DATA_PATH: 'wxfile://user' },
+    getFileSystemManager() {
+      return {
+        writeFile(options) {
+          files.set(options.filePath, options.data);
+          options.success();
+        },
+        readFile(options) {
+          options.success({ data: files.get(options.filePath) });
+        }
+      };
+    }
+  };
+  try {
+    const now = new Date(2026, 7, 10, 11);
+    await budgetStore.saveBudget({
+      incomeCents: 800000,
+      fixedExpenseCents: 400000,
+      savingGoalCents: 100000,
+      historicalSpentBeforeTrackingCents: 0
+    }, now);
+    await addTransaction({
+      action: 'create',
+      commandId: 'backup-original',
+      amountCents: 100,
+      categoryId: 'food',
+      note: '备份内容',
+      occurredAt: now.getTime()
+    });
+    await themeStore.saveTheme({ presetId: 'midnight', hueShift: 0, warmth: 0, brightness: 0 });
+    const backup = await createDataBackup(now);
+    await addTransaction({
+      action: 'create',
+      commandId: 'current-kept',
+      amountCents: 200,
+      categoryId: 'transport',
+      note: '当前内容',
+      occurredAt: now.getTime()
+    });
+    await themeStore.saveTheme({ presetId: 'coral', hueShift: 0, warmth: 0, brightness: 0 });
+    failStateWrites = true;
+    await assert.rejects(restoreDataBackup(backup.filePath), /quota/);
+    failStateWrites = false;
+    assert.deepEqual((await listTransactions({ all: true })).map((item) => item.id).sort(), [
+      'backup-original',
+      'current-kept'
+    ]);
+    assert.equal((await themeStore.loadTheme()).settings.presetId, 'coral');
+  } finally {
+    global.wx = originalWx;
+  }
 });
 
 test('transaction rejects unknown category and overlong purpose', async () => {

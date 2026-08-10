@@ -5,6 +5,7 @@ const { readState, saveState } = require('./state-store');
 
 const NOTE_MAX_LENGTH = 20;
 const IMPORT_MAX_RECORDS = 5000;
+const IMPORT_BATCH_ID_PATTERN = /^[a-z0-9-]{1,100}$/;
 
 let mutationQueue = Promise.resolve();
 
@@ -60,6 +61,9 @@ function assertCommand(command) {
       || command.transactions.length > IMPORT_MAX_RECORDS) {
       throw new Error('平台账单导入命令无效');
     }
+    if (command.importedAt !== undefined && !Number.isFinite(command.importedAt)) {
+      throw new Error('平台账单导入时间无效');
+    }
     command.transactions.forEach((transaction) => {
       assertTransactionFields(transaction);
       if (command.source === 'wechat' && transaction.direction === 'income') {
@@ -72,6 +76,13 @@ function assertCommand(command) {
         throw new Error('平台账单记录标识无效');
       }
     });
+    return;
+  }
+  if (command.action === 'undoImport') {
+    if (typeof command.importBatchId !== 'string'
+      || !IMPORT_BATCH_ID_PATTERN.test(command.importBatchId)) {
+      throw new Error('待撤销导入批次无效');
+    }
     return;
   }
   throw new Error('未知交易命令');
@@ -112,7 +123,10 @@ function updateLocatedTransaction(state, location, command) {
   if (toMonthKey(command.occurredAt) !== location.monthKey) {
     throw new Error('交易日期只能在原月份内修改');
   }
-  const next = transactionFromCommand(command);
+  const previous = location.kind === 'current'
+    ? state.transactions[location.index]
+    : state.history[location.historyIndex].transactions[location.index];
+  const next = Object.assign({}, previous, transactionFromCommand(command));
   if (location.kind === 'current') {
     const transactions = state.transactions.slice();
     transactions[location.index] = next;
@@ -150,7 +164,7 @@ function monthDistance(currentMonthKey, monthKey) {
     + Number(current[2]) - Number(target[2]);
 }
 
-function importTransactions(state, records) {
+function importTransactions(state, records, metadata) {
   const existingIds = new Set(
     state.history.reduce(
       (ids, archive) => ids.concat(archive.transactions.map((item) => item.id)),
@@ -183,7 +197,9 @@ function importTransactions(state, records) {
       categoryId: record.categoryId,
       direction: record.direction === 'income' ? 'income' : 'expense',
       note: (record.note || '').trim(),
-      occurredAt: record.occurredAt
+      occurredAt: record.occurredAt,
+      importBatchId: metadata.importBatchId,
+      importedAt: metadata.importedAt
     };
     if (distance === 0) {
       current.push(transaction);
@@ -213,6 +229,24 @@ function importTransactions(state, records) {
   };
 }
 
+function undoImportBatch(state, importBatchId) {
+  let removedCount = 0;
+  const keepOtherBatches = (item) => {
+    if (item.importBatchId !== importBatchId) return true;
+    removedCount += 1;
+    return false;
+  };
+  const transactions = state.transactions.filter(keepOtherBatches);
+  const history = state.history.map((archive) => Object.assign({}, archive, {
+    transactions: archive.transactions.filter(keepOtherBatches)
+  })).filter((archive) => archive.historicalSpentBeforeTrackingCents > 0
+    || archive.transactions.length > 0);
+  return {
+    removedCount,
+    state: Object.assign({}, state, { history, transactions })
+  };
+}
+
 async function executeCommand(command) {
   assertCommand(command);
   const result = await readState();
@@ -231,7 +265,13 @@ async function executeCommand(command) {
       transactions: state.transactions.concat(transactionFromCommand(command))
     });
   } else if (command.action === 'import') {
-    importResult = importTransactions(state, command.transactions);
+    importResult = importTransactions(state, command.transactions, {
+      importBatchId: command.commandId,
+      importedAt: command.importedAt || Date.now()
+    });
+    state = importResult.state;
+  } else if (command.action === 'undoImport') {
+    importResult = undoImportBatch(state, command.importBatchId);
     state = importResult.state;
   } else {
     const location = locateTransaction(state, command.transactionId);
@@ -252,7 +292,8 @@ async function executeCommand(command) {
   }, importResult ? {
     duplicateCount: importResult.duplicateCount,
     importedCount: importResult.importedCount,
-    skippedCount: importResult.skippedCount
+    skippedCount: importResult.skippedCount,
+    removedCount: importResult.removedCount
   } : {});
 }
 
@@ -269,9 +310,54 @@ async function listTransactions(options) {
     (all, item) => all.concat(item.transactions),
     result.state.transactions.slice()
   );
+  if (options && options.importBatches === true) {
+    const batches = new Map();
+    allTransactions.forEach((item) => {
+      if (!item.importBatchId || !Number.isFinite(item.importedAt)) return;
+      const existing = batches.get(item.importBatchId) || {
+        id: item.importBatchId,
+        importedAt: item.importedAt,
+        source: item.id.indexOf('alipay-') === 0 ? 'alipay' : 'wechat',
+        timestamps: []
+      };
+      existing.timestamps.push(item.occurredAt);
+      batches.set(item.importBatchId, existing);
+    });
+    return Array.from(batches.values()).map((batch) => ({
+      id: batch.id,
+      importedAt: batch.importedAt,
+      source: batch.source,
+      sourceLabel: batch.source === 'alipay' ? '支付宝' : '微信支付',
+      count: batch.timestamps.length,
+      dateFrom: toDateKey(Math.min(...batch.timestamps)),
+      dateTo: toDateKey(Math.max(...batch.timestamps))
+    })).sort((a, b) => b.importedAt - a.importedAt).slice(0, 5);
+  }
   if (options && options.all === true) return sortedTransactions(allTransactions);
-  if (!options || options.dateKey === undefined) {
+  if (!options || (options.dateKey === undefined && options.startDateKey === undefined)) {
     return sortedTransactions(result.state.transactions);
+  }
+  if (options.startDateKey !== undefined || options.endDateKey !== undefined) {
+    if (!parseLocalDateKey(options.startDateKey)
+      || !parseLocalDateKey(options.endDateKey)
+      || options.startDateKey > options.endDateKey) {
+      throw new Error('统计时间段无效');
+    }
+    if (options.direction !== undefined
+      && options.direction !== 'expense'
+      && options.direction !== 'income') {
+      throw new Error('收支筛选无效');
+    }
+    if (options.categoryId !== undefined && !isValidCategoryId(options.categoryId)) {
+      throw new Error('分类筛选无效');
+    }
+    return sortedTransactions(allTransactions.filter((item) => {
+      const dateKey = toDateKey(item.occurredAt);
+      return dateKey >= options.startDateKey
+        && dateKey <= options.endDateKey
+        && (options.direction === undefined || item.direction === options.direction)
+        && (options.categoryId === undefined || item.categoryId === options.categoryId);
+    }));
   }
   if (!parseLocalDateKey(options.dateKey)) {
     throw new Error('历史日期无效');

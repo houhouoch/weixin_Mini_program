@@ -21,6 +21,7 @@ const required = [
   'domain/theme.js',
   'infrastructure/file-system.js',
   'services/ledger-export.js',
+  'services/data-backup.js',
   'services/spending-summary.js',
   'services/theme-store.js',
   'services/wechat-bill-import.js',
@@ -75,6 +76,7 @@ check(!Object.prototype.hasOwnProperty.call(appConfig, 'tabBar'), '未配置 tab
 
 const pageJs = fs.readFileSync(path.join(root, 'pages/index/index.js'), 'utf8');
 check(!/wx\.(get|set|remove|clear)Storage/.test(pageJs), '页面层不直接访问微信缓存');
+check(!pageJs.includes('wx.getFileSystemManager'), '页面层不直接访问微信文件系统管理器');
 check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
 check(pageJs.includes('onShareTimeline'), '实现朋友圈分享生命周期');
@@ -95,6 +97,8 @@ check(pageJs.includes('handleExportLedger'), '页面支持导出 Excel 流水');
 check(pageJs.includes('wx.chooseMessageFile'), '页面支持从微信会话选择账单文件');
 check(pageJs.includes('chooseBillFile'), '页面使用统一入口选择微信或支付宝账单');
 check(pageJs.includes('confirmBillImport'), '页面支持预览后确认导入平台账单');
+check(pageJs.includes('handleUndoImportBatch'), '页面支持按批次撤销账单导入');
+check(pageJs.includes('handleCreateBackup') && pageJs.includes('confirmRestoreBackup'), '页面支持完整备份与恢复');
 check(pageJs.includes('showMenu: true'), 'Excel 预览显示右上角文档菜单');
 check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel 文件');
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
@@ -102,6 +106,8 @@ check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘'
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
 check(wxml.includes("reviewPeriod === 'custom'"), '自定义统计只在对应回看模式展示');
 check(wxml.includes('mode="date"') && wxml.includes('reviewRangeStartKey') && wxml.includes('reviewRangeEndKey'), '页面使用原生日期选择器设置统计区间');
+check(wxml.includes('reviewSummary.categoryBreakdown') && wxml.includes('reviewTransactions'), '自定义统计支持分类和逐笔流水下钻');
+check(wxml.includes('本月超支 ¥{{result.monthlyOverspentText}}'), '负数月度余额使用本月超支与绝对值表达');
 check(wxml.includes('open-type="share"'), '好友分享使用 open-type="share"');
 check(wxml.includes('朋友圈 · 右上角'), '提供朋友圈右上角菜单引导');
 check(wxml.includes('这笔花在哪儿'), '记录区先回答消费去向');
@@ -125,6 +131,8 @@ check(wxml.includes('微信先解压邮件账单'), '导入区说明微信加密
 const billImportSource = fs.readFileSync(path.join(root, 'services/wechat-bill-import.js'), 'utf8');
 check(billImportSource.includes('还款只是在结清已有欠款'), '导入预览提供还款去重口径');
 check(wxml.includes('不会上传账单，不保存微信或支付宝交易单号原文'), '导入区明示本地解析与隐私边界');
+check(wxml.includes('最近可撤销的导入') && wxml.includes('handleUndoImportBatch'), '历史区显示可撤销导入批次');
+check(wxml.includes('完整数据备份与恢复') && wxml.includes('选择备份文件恢复'), '历史区提供完整本地备份恢复入口');
 
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 4'), '本地数据使用 schema 4');
@@ -145,10 +153,13 @@ check(
 );
 check(transactionSource.includes("command.action === 'update'"), '交易服务支持修改命令');
 check(transactionSource.includes("command.action === 'import'"), '交易服务支持批量导入命令');
+check(transactionSource.includes("command.action === 'undoImport'"), '交易服务支持撤销导入批次命令');
+check(transactionSource.includes('importBatchId') && transactionSource.includes('importedAt'), '新导入交易持久化本地批次元数据');
 check(transactionSource.includes('existingIds'), '交易服务按稳定标识去重导入');
 check(transactionSource.includes("command.source !== 'alipay'"), '交易服务接受支付宝平台导入');
 check(transactionSource.includes("record.direction === 'income'"), '批量导入保留支付宝收入方向');
 check(transactionSource.includes('options.dateKey'), '交易服务支持按日期读取当前和归档记录');
+check(transactionSource.includes('options.startDateKey') && transactionSource.includes('options.categoryId'), '交易服务支持区间与分类筛选');
 check(transactionSource.includes('交易日期只能在原月份内修改'), '交易服务阻止跨月搬移记录');
 
 const analyticsSource = fs.readFileSync(path.join(root, 'services/analytics.js'), 'utf8');
@@ -175,6 +186,11 @@ check(fileSystemSource.includes('readZipEntry'), 'XLSX 通过微信文件系统�
 check(fileSystemSource.includes("encoding: 'utf-8'"), 'XLSX 条目分别指定 UTF-8 编码');
 check(fileSystemSource.includes('decodeUtf8Data'), 'XLSX 兼容微信返回 ArrayBuffer');
 check(fileSystemSource.includes('decodeGb18030'), '支付宝 CSV 兼容 GB18030 编码');
+
+const backupSource = fs.readFileSync(path.join(root, 'services/data-backup.js'), 'utf8');
+check(backupSource.includes("BACKUP_FILE_TYPE = 'today-can-spend-backup'"), '完整备份使用可验证的产品格式标识');
+check(backupSource.includes('isValidState') && backupSource.includes('isValidThemeSettings'), '恢复前校验状态与主题');
+check(!/openid|unionid|avatar|nickName/i.test(backupSource), '完整备份服务不加入身份字段');
 
 if (failures.length) {
   console.error(`\n${failures.length} 项检查失败：`);

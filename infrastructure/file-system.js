@@ -39,7 +39,7 @@ function readBinaryFile(filePath) {
       success: (result) => resolve(result.data),
       fail: (error) => reject(new Error(error && error.errMsg
         ? error.errMsg
-        : '账单文件读取失败'))
+        : '文件读取失败'))
     });
   });
 }

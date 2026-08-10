@@ -98,6 +98,25 @@ function topCategory(records) {
   return entries[0] || null;
 }
 
+function categoryBreakdown(records) {
+  const total = sumAmounts(records);
+  const grouped = Object.create(null);
+  records.forEach((item) => {
+    const current = grouped[item.categoryId] || { amountCents: 0, count: 0 };
+    current.amountCents += item.amountCents;
+    current.count += 1;
+    grouped[item.categoryId] = current;
+  });
+  return Object.keys(grouped).map((categoryId) => ({
+    categoryId,
+    categoryLabel: getCategoryLabel(categoryId),
+    amountCents: grouped[categoryId].amountCents,
+    amountText: formatMetric(grouped[categoryId].amountCents),
+    count: grouped[categoryId].count,
+    percent: total > 0 ? Math.round(grouped[categoryId].amountCents * 100 / total) : 0
+  })).sort((a, b) => b.amountCents - a.amountCents);
+}
+
 function summaryShell(period, metrics, chart, insightText, scopeText) {
   return { period, metrics, chart: withBarPercent(chart), insightText, scopeText };
 }
@@ -258,7 +277,10 @@ function deriveCustomSummary(state, now, range) {
     ? `区间花得最多：${getCategoryLabel(top.categoryId)} ${formatMetric(top.amountCents)}`
     : '该时间段没有支出记录';
   const scope = `${chineseDateLabel(start)} 至 ${chineseDateLabel(end)} · 共${totalDays}天 · 不含收入和启用前汇总`;
-  return summaryShell('custom', metrics, chart, insight, scope);
+  return Object.assign(summaryShell('custom', metrics, chart, insight, scope), {
+    categoryBreakdown: categoryBreakdown(records),
+    recordCount: records.length
+  });
 }
 
 function deriveSpendingSummary(state, period, value, range) {

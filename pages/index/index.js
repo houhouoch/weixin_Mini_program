@@ -21,6 +21,11 @@ const {
   parseYuanToCents
 } = require('../../domain/money');
 const budgetStore = require('../../services/budget-store');
+const {
+  createDataBackup,
+  previewDataBackup,
+  restoreDataBackup
+} = require('../../services/data-backup');
 const { trackEvent } = require('../../services/analytics');
 const { exportLedger } = require('../../services/ledger-export');
 const { getSpendingSummary } = require('../../services/spending-summary');
@@ -123,6 +128,11 @@ function formatHistoryDate(dateKey) {
   return date ? `${date.getMonth() + 1}月${date.getDate()}日` : dateKey;
 }
 
+function formatImportTime(timestamp) {
+  const date = new Date(timestamp);
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 function toTransactionView(item, now) {
   const direction = item.direction === 'income' ? 'income' : 'expense';
   return {
@@ -169,6 +179,12 @@ Page({
     billImportError: '',
     billImportLoading: false,
     billImportPreview: null,
+    importBatches: [],
+    isImportBatchUndoing: false,
+    backupError: '',
+    backupFileName: '',
+    backupFilePath: '',
+    backupPreview: null,
     canSaveToDisk: false,
     categories: CATEGORIES,
     dateLabel: '',
@@ -197,13 +213,20 @@ Page({
     isEditSaving: false,
     isBudgetSaving: false,
     isBillImportSaving: false,
+    isBackingUp: false,
     isExporting: false,
     isSaving: false,
+    isRestoringBackup: false,
     noteInput: '',
     recordDirection: 'expense',
     readMessage: '',
     reviewError: '',
     reviewLoading: false,
+    reviewDetailCategoryId: '',
+    reviewDetailCategoryLabel: '全部支出',
+    reviewDetailError: '',
+    reviewDetailLoading: false,
+    reviewDetailVisible: false,
     reviewPeriod: 'day',
     reviewPeriods: REVIEW_PERIODS,
     reviewRangeEndKey: INITIAL_DATE_KEY,
@@ -211,6 +234,7 @@ Page({
     reviewRangeMinKey: REVIEW_MIN_DATE_KEY,
     reviewRangeStartKey: INITIAL_REVIEW_START_KEY,
     reviewSummary: null,
+    reviewTransactions: [],
     result: null,
     shareTitle: '今天还能花｜开始我的收支记录',
     selectedCategoryId: 'food',
@@ -359,6 +383,7 @@ Page({
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
+        monthlyOverspentText: formatCents(Math.abs(result.monthlyRemainingCents)),
         recordedIncomeText: formatCents(result.recordedIncomeCents),
         persona,
         heroAmountText: presentation.amountText,
@@ -380,6 +405,9 @@ Page({
     });
     const secondaryRefreshes = [];
     if (this.data.sections.review) secondaryRefreshes.push(this.refreshReview(now));
+    if (this.data.sections.review && this.data.reviewDetailVisible) {
+      secondaryRefreshes.push(this.refreshReviewDetails());
+    }
     if (this.data.sections.history) secondaryRefreshes.push(this.refreshHistoryDetail());
     await Promise.all(secondaryRefreshes);
     trackEvent('result_viewed', { status: result.status, entry: this.data.fromShare ? 'share' : 'direct' });
@@ -409,7 +437,18 @@ Page({
         } : null
       );
       if (requestId !== this._reviewReadId) return;
-      this.setData({ reviewSummary });
+      const nextReviewData = { reviewSummary };
+      if (reviewSummary.period === 'custom'
+        && reviewSummary.recordCount === 0
+        && this.data.reviewDetailVisible) {
+        Object.assign(nextReviewData, {
+          reviewDetailCategoryId: '',
+          reviewDetailCategoryLabel: '全部支出',
+          reviewDetailVisible: false,
+          reviewTransactions: []
+        });
+      }
+      this.setData(nextReviewData);
     } catch (error) {
       if (requestId !== this._reviewReadId) return;
       console.error('读取消费回看失败', error);
@@ -422,7 +461,14 @@ Page({
   handleReviewPeriod(event) {
     const reviewPeriod = event.currentTarget.dataset.period;
     if (reviewPeriod === this.data.reviewPeriod) return;
-    this.setData({ reviewPeriod });
+    this.setData({
+      reviewPeriod,
+      reviewDetailCategoryId: '',
+      reviewDetailCategoryLabel: '全部支出',
+      reviewDetailError: '',
+      reviewDetailVisible: false,
+      reviewTransactions: []
+    });
     this.refreshReview(new Date());
   },
 
@@ -432,7 +478,14 @@ Page({
     const reviewRangeEndKey = reviewRangeStartKey > this.data.reviewRangeEndKey
       ? reviewRangeStartKey
       : this.data.reviewRangeEndKey;
-    this.setData({ reviewRangeStartKey, reviewRangeEndKey }, () => {
+    this.setData({
+      reviewRangeStartKey,
+      reviewRangeEndKey,
+      reviewDetailCategoryId: '',
+      reviewDetailCategoryLabel: '全部支出',
+      reviewDetailVisible: false,
+      reviewTransactions: []
+    }, () => {
       if (this.data.reviewPeriod === 'custom') this.refreshReview(new Date());
     });
   },
@@ -443,9 +496,80 @@ Page({
     const reviewRangeStartKey = reviewRangeEndKey < this.data.reviewRangeStartKey
       ? reviewRangeEndKey
       : this.data.reviewRangeStartKey;
-    this.setData({ reviewRangeStartKey, reviewRangeEndKey }, () => {
+    this.setData({
+      reviewRangeStartKey,
+      reviewRangeEndKey,
+      reviewDetailCategoryId: '',
+      reviewDetailCategoryLabel: '全部支出',
+      reviewDetailVisible: false,
+      reviewTransactions: []
+    }, () => {
       if (this.data.reviewPeriod === 'custom') this.refreshReview(new Date());
     });
+  },
+
+  async refreshReviewDetails() {
+    if (this.data.reviewPeriod !== 'custom' || !this.data.reviewDetailVisible) return;
+    const requestId = (this._reviewDetailReadId || 0) + 1;
+    this._reviewDetailReadId = requestId;
+    this.setData({ reviewDetailLoading: true, reviewDetailError: '' });
+    try {
+      const options = {
+        startDateKey: this.data.reviewRangeStartKey,
+        endDateKey: this.data.reviewRangeEndKey,
+        direction: 'expense'
+      };
+      if (this.data.reviewDetailCategoryId) {
+        options.categoryId = this.data.reviewDetailCategoryId;
+      }
+      const transactions = await listTransactions(options);
+      if (requestId !== this._reviewDetailReadId) return;
+      this.setData({
+        reviewTransactions: transactions.map((item) => toTransactionView(item, new Date()))
+      });
+    } catch (error) {
+      if (requestId !== this._reviewDetailReadId) return;
+      console.error('读取区间支出明细失败', error);
+      this.setData({ reviewDetailError: '区间明细暂时没读到，请重试。' });
+    } finally {
+      if (requestId === this._reviewDetailReadId) {
+        this.setData({ reviewDetailLoading: false });
+      }
+    }
+  },
+
+  toggleReviewDetails() {
+    if (this.data.reviewDetailVisible) {
+      this.setData({
+        reviewDetailCategoryId: '',
+        reviewDetailCategoryLabel: '全部支出',
+        reviewDetailVisible: false,
+        reviewTransactions: []
+      });
+      return;
+    }
+    this.setData({
+      reviewDetailCategoryId: '',
+      reviewDetailCategoryLabel: '全部支出',
+      reviewDetailVisible: true
+    }, () => this.refreshReviewDetails());
+  },
+
+  handleReviewCategoryDetail(event) {
+    const categoryId = event.currentTarget.dataset.category;
+    const categoryLabel = event.currentTarget.dataset.label;
+    this.setData({
+      reviewDetailCategoryId: categoryId,
+      reviewDetailCategoryLabel: categoryLabel,
+      reviewDetailVisible: true
+    }, () => this.refreshReviewDetails());
+  },
+
+  clearReviewCategoryDetail() {
+    this.setData({
+      reviewDetailCategoryId: '',
+      reviewDetailCategoryLabel: '全部支出'
+    }, () => this.refreshReviewDetails());
   },
 
   async refreshHistoryDetail() {
@@ -453,7 +577,11 @@ Page({
     this._historyReadId = requestId;
     this.setData({ historyLoading: true, historyError: '' });
     try {
-      const transactions = await listTransactions({ dateKey: this.data.historyDateKey });
+      const results = await Promise.all([
+        listTransactions({ dateKey: this.data.historyDateKey }),
+        listTransactions({ importBatches: true })
+      ]);
+      const transactions = results[0];
       if (requestId !== this._historyReadId) return;
       const historyTransactions = transactions.map((item) => toTransactionView(item, new Date()));
       const historyExpenseCents = transactions
@@ -466,7 +594,10 @@ Page({
         historyDateLabel: formatHistoryDate(this.data.historyDateKey),
         historyExpenseText: formatCents(historyExpenseCents),
         historyIncomeText: formatCents(historyIncomeCents),
-        historyTransactions
+        historyTransactions,
+        importBatches: results[1].map((item) => Object.assign({}, item, {
+          importedAtText: formatImportTime(item.importedAt)
+        }))
       });
     } catch (error) {
       if (requestId !== this._historyReadId) return;
@@ -567,7 +698,7 @@ Page({
 
   openEditTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const transaction = this.data.historyTransactions
+    const transaction = this.data.historyTransactions.concat(this.data.reviewTransactions)
       .find((item) => item.id === transactionId);
     if (!transaction) return;
     const originalDate = new Date(transaction.occurredAt);
@@ -682,7 +813,7 @@ Page({
 
   handleDeleteTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const transaction = this.data.historyTransactions
+    const transaction = this.data.historyTransactions.concat(this.data.reviewTransactions)
       .find((item) => item.id === transactionId);
     if (!transaction) return;
     const amountText = transaction.amountText;
@@ -1032,6 +1163,158 @@ Page({
       this._billImportSaveInFlight = false;
       this.setData({ isBillImportSaving: false });
     }
+  },
+
+  handleUndoImportBatch(event) {
+    if (this.data.isImportBatchUndoing) return;
+    const importBatchId = event.currentTarget.dataset.id;
+    const batch = this.data.importBatches.find((item) => item.id === importBatchId);
+    if (!batch) return;
+    wx.showModal({
+      title: '撤销这次账单导入',
+      content: `将删除 ${batch.sourceLabel} ${batch.dateFrom} 至 ${batch.dateTo} 导入的剩余 ${batch.count} 笔记录，不影响手工记录和其他批次。`,
+      confirmText: '撤销导入',
+      confirmColor: '#C84F4A',
+      success: async (result) => {
+        if (!result.confirm) return;
+        this.setData({ isImportBatchUndoing: true, billImportError: '' });
+        try {
+          const undoResult = await addTransaction({
+            action: 'undoImport',
+            commandId: commandId('undo-import'),
+            importBatchId
+          });
+          await this.refreshAfterMutation();
+          wx.showToast({
+            title: undoResult.removedCount ? `已撤销 ${undoResult.removedCount} 笔` : '该批次已撤销',
+            icon: undoResult.removedCount ? 'success' : 'none'
+          });
+          trackEvent('bill_import', {
+            outcome: 'batch_undone',
+            recordCount: undoResult.removedCount || 0
+          });
+        } catch (error) {
+          console.error('撤销账单导入失败', error);
+          this.setData({ billImportError: error.message || '撤销导入失败，请重试' });
+        } finally {
+          this.setData({ isImportBatchUndoing: false });
+        }
+      }
+    });
+  },
+
+  async handleCreateBackup() {
+    if (this._backupCreateInFlight || this.data.isBackingUp) return;
+    this._backupCreateInFlight = true;
+    this.setData({ isBackingUp: true, backupError: '' });
+    try {
+      const backup = await createDataBackup(new Date());
+      this.setData({
+        backupFileName: backup.fileName,
+        backupFilePath: backup.filePath
+      });
+      wx.showToast({ title: '完整备份已生成', icon: 'success' });
+      trackEvent('data_backup', { outcome: 'created' });
+    } catch (error) {
+      console.error('生成完整备份失败', error);
+      this.setData({ backupError: error.message || '备份失败，请重试' });
+      trackEvent('data_backup', { outcome: 'create_failed' });
+    } finally {
+      this._backupCreateInFlight = false;
+      this.setData({ isBackingUp: false });
+    }
+  },
+
+  shareBackupFile() {
+    if (!this.data.backupFilePath) return;
+    if (typeof wx.shareFileMessage !== 'function') {
+      wx.showToast({ title: '当前微信版本不支持直接转发文件', icon: 'none' });
+      return;
+    }
+    wx.shareFileMessage({
+      filePath: this.data.backupFilePath,
+      fileName: this.data.backupFileName,
+      fail: (error) => {
+        console.error('转发完整备份失败', error);
+        wx.showToast({ title: '转发失败，请重试', icon: 'none' });
+      }
+    });
+  },
+
+  saveBackupToDisk() {
+    if (!this.data.backupFilePath || !this.data.canSaveToDisk) return;
+    wx.saveFileToDisk({
+      filePath: this.data.backupFilePath,
+      success: () => wx.showToast({ title: '备份已保存到电脑', icon: 'success' }),
+      fail: (error) => {
+        console.error('保存完整备份失败', error);
+        wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+      }
+    });
+  },
+
+  chooseBackupFile() {
+    if (this._backupReadInFlight || this.data.isRestoringBackup) return;
+    this._backupReadInFlight = true;
+    this.setData({ backupError: '', backupPreview: null });
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['json'],
+      success: async (result) => {
+        try {
+          const preview = await previewDataBackup(result.tempFiles && result.tempFiles[0]);
+          this.setData({ backupPreview: preview });
+          trackEvent('data_backup', { outcome: 'previewed' });
+        } catch (error) {
+          console.error('预览完整备份失败', error);
+          this.setData({ backupError: error.message || '备份文件无法识别' });
+          trackEvent('data_backup', { outcome: 'preview_failed' });
+        } finally {
+          this._backupReadInFlight = false;
+        }
+      },
+      fail: (error) => {
+        this._backupReadInFlight = false;
+        if (!error || !/cancel/i.test(error.errMsg || '')) {
+          console.error('选择完整备份失败', error);
+          this.setData({ backupError: '没有读取到备份文件，请重新选择。' });
+        }
+      }
+    });
+  },
+
+  confirmRestoreBackup() {
+    const preview = this.data.backupPreview;
+    if (!preview || this.data.isRestoringBackup) return;
+    wx.showModal({
+      title: '用备份覆盖本机数据',
+      content: `备份时间 ${preview.exportedAtText}，包含 ${preview.recordCount} 笔流水（${preview.monthFrom} 至 ${preview.monthTo}）。恢复后将替换当前本机预算、流水和主题。`,
+      confirmText: '确认恢复',
+      confirmColor: '#C84F4A',
+      success: async (result) => {
+        if (!result.confirm) return;
+        this.setData({ isRestoringBackup: true, backupError: '' });
+        try {
+          await restoreDataBackup(preview.filePath);
+          this._historyDateTouched = false;
+          this.setData({
+            backupPreview: null,
+            reviewDetailVisible: false,
+            reviewTransactions: []
+          });
+          await this.refreshPage();
+          wx.showToast({ title: '本地数据已恢复', icon: 'success' });
+          trackEvent('data_backup', { outcome: 'restored' });
+        } catch (error) {
+          console.error('恢复完整备份失败', error);
+          this.setData({ backupError: error.message || '恢复失败，原数据已保留' });
+          trackEvent('data_backup', { outcome: 'restore_failed' });
+        } finally {
+          this.setData({ isRestoringBackup: false });
+        }
+      }
+    });
   },
 
   openExportedLedger(filePath) {

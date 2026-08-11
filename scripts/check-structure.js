@@ -74,6 +74,11 @@ const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'
 check(Array.isArray(appConfig.pages) && appConfig.pages.length === 1, '仅注册一个页面');
 check(!Object.prototype.hasOwnProperty.call(appConfig, 'tabBar'), '未配置 tabBar');
 
+const indexPageConfig = JSON.parse(
+  fs.readFileSync(path.join(root, 'pages/index/index.json'), 'utf8')
+);
+check(indexPageConfig.navigationBarTitleText === '', '首页不重复渲染可能被裁切的原生导航标题');
+
 const pageJs = fs.readFileSync(path.join(root, 'pages/index/index.js'), 'utf8');
 const dateImportMatch = pageJs.match(
   /const\s*\{([^}]*)\}\s*=\s*require\('\.\.\/\.\.\/domain\/date'\)/
@@ -117,6 +122,7 @@ check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel �
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
 
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
+check(wxml.includes('<text class="page-title">今天还能花</text>'), '页面内产品标题保持完整显示');
 check(wxml.includes("reviewPeriod === 'custom'"), '自定义统计只在对应回看模式展示');
 check(wxml.includes('mode="date"') && wxml.includes('reviewRangeStartKey') && wxml.includes('reviewRangeEndKey'), '页面使用原生日期选择器设置统计区间');
 check(wxml.includes('reviewSummary.categoryBreakdown') && wxml.includes('reviewTransactions'), '自定义统计支持分类和逐笔流水下钻');

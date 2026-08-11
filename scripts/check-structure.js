@@ -113,6 +113,7 @@ check(pageJs.includes('refreshHistoryDetail'), '页面支持按日期读取历�
 check(pageJs.includes('saveEditedTransaction'), '页面支持修改错误交易');
 check(pageJs.includes('handleExportLedger'), '页面支持导出 Excel 流水');
 check(pageJs.includes('wx.chooseMessageFile'), '页面支持从微信会话选择账单文件');
+check(pageJs.includes('wx.openPrivacyContract'), '页面可打开微信官方隐私保护指引');
 check(pageJs.includes('chooseBillFile'), '页面使用统一入口选择微信或支付宝账单');
 check(pageJs.includes('confirmBillImport'), '页面支持预览后确认导入平台账单');
 check(pageJs.includes('handleUndoImportBatch'), '页面支持按批次撤销账单导入');
@@ -150,6 +151,10 @@ check(wxml.includes('微信先解压邮件账单'), '导入区说明微信加密
 const billImportSource = fs.readFileSync(path.join(root, 'services/wechat-bill-import.js'), 'utf8');
 check(billImportSource.includes('还款只是在结清已有欠款'), '导入预览提供还款去重口径');
 check(wxml.includes('不会上传账单，不保存微信或支付宝交易单号原文'), '导入区明示本地解析与隐私边界');
+check(
+  wxml.includes('bindtap="openPrivacyContract"') && wxml.includes('隐私保护指引'),
+  '设置抽屉提供微信官方隐私保护指引入口'
+);
 check(wxml.includes('最近可撤销的导入') && wxml.includes('handleUndoImportBatch'), '历史区显示可撤销导入批次');
 check(wxml.includes('完整数据备份与恢复') && wxml.includes('选择备份文件恢复'), '历史区提供完整本地备份恢复入口');
 
@@ -182,6 +187,10 @@ check(
 check(
   /\.fixed-expense-row__delete\s*\{[^}]*width:\s*112rpx[^}]*white-space:\s*nowrap/.test(wxss),
   '固定支出移除操作拥有独立宽度且禁止折行'
+);
+check(
+  /\.settings-entry\s*\{[^}]*min-height:\s*112rpx/.test(wxss),
+  '设置入口满足主要触控高度要求'
 );
 check(wxss.includes('.hero-card--todayOverspent'), '今日超额拥有独立视觉状态');
 check(wxss.includes('@media (prefers-reduced-motion: reduce)'), '动画尊重减少动态效果偏好');

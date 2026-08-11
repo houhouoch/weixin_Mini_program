@@ -91,7 +91,7 @@
 .delete-button:active,
 .category-chip:active,
 .review-tab:active,
-.settings-entry:active,
+.theme-entry:active,
 .theme-preset:active,
 .theme-action:active {
   opacity: 0.76;
@@ -1745,7 +1745,7 @@
   background: var(--theme-primary, #123F35);
 }
 
-.settings-entry {
+.theme-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1761,23 +1761,23 @@
   text-align: left;
 }
 
-.settings-entry__copy {
+.theme-entry__copy {
   display: flex;
   flex-direction: column;
 }
 
-.settings-entry__title {
+.theme-entry__title {
   font-size: 27rpx;
   font-weight: 750;
 }
 
-.settings-entry__subtitle {
+.theme-entry__subtitle {
   margin-top: 4rpx;
   color: var(--theme-muted, #6B7369);
   font-size: 21rpx;
 }
 
-.settings-entry__action {
+.theme-entry__action {
   color: var(--theme-primary, #123F35);
   font-size: 23rpx;
   font-weight: 700;

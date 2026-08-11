@@ -1046,19 +1046,6 @@ Page({
     this.setData({ drawerVisible: false, formErrors: Object.assign({}, EMPTY_ERRORS) });
   },
 
-  openPrivacyContract() {
-    if (typeof wx.openPrivacyContract !== 'function') {
-      wx.showToast({ title: '请更新微信后查看隐私指引', icon: 'none' });
-      return;
-    }
-    wx.openPrivacyContract({
-      fail: (error) => {
-        console.error('打开隐私保护指引失败', error);
-        wx.showToast({ title: '隐私指引暂不可用，请稍后重试', icon: 'none' });
-      }
-    });
-  },
-
   openThemeDrawer() {
     const settings = Object.assign({}, this.data.themeSettings);
     this.setData({

@@ -772,20 +772,12 @@
         <text>数据只保存在当前设备中，不会上传。</text>
       </view>
 
-      <button class="settings-entry" bindtap="openPrivacyContract" aria-label="查看微信官方隐私保护指引">
-        <view class="settings-entry__copy">
-          <text class="settings-entry__title">隐私保护指引</text>
-          <text class="settings-entry__subtitle">查看微信后台已配置的正式指引</text>
+      <button class="theme-entry" bindtap="openThemeDrawer" aria-label="打开页面主题设置">
+        <view class="theme-entry__copy">
+          <text class="theme-entry__title">页面主题</text>
+          <text class="theme-entry__subtitle">当前：{{themeName}}</text>
         </view>
-        <text class="settings-entry__action">查看指引</text>
-      </button>
-
-      <button class="settings-entry" bindtap="openThemeDrawer" aria-label="打开页面主题设置">
-        <view class="settings-entry__copy">
-          <text class="settings-entry__title">页面主题</text>
-          <text class="settings-entry__subtitle">当前：{{themeName}}</text>
-        </view>
-        <text class="settings-entry__action">选择主题</text>
+        <text class="theme-entry__action">选择主题</text>
       </button>
 
       <button

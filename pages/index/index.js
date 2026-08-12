@@ -47,8 +47,7 @@ const {
 const EMPTY_ERRORS = {
   income: '',
   fixedExpense: '',
-  savingGoal: '',
-  historicalSpentBeforeTracking: ''
+  savingGoal: ''
 };
 
 const CYCLE_START_DAYS = Object.freeze(Array.from({ length: 28 }, (_, index) => ({
@@ -59,8 +58,7 @@ const CYCLE_START_DAYS = Object.freeze(Array.from({ length: 28 }, (_, index) => 
 const FIELD_CONFIG = {
   income: 'incomeCents',
   fixedExpense: 'fixedExpenseCents',
-  savingGoal: 'savingGoalCents',
-  historicalSpentBeforeTracking: 'historicalSpentBeforeTrackingCents'
+  savingGoal: 'savingGoalCents'
 };
 
 function commandId(prefix) {
@@ -126,12 +124,11 @@ function personaForStatus(status) {
   return '稳稳生活派';
 }
 
-function emptyForm(now) {
+function emptyForm() {
   return {
     income: '',
     fixedExpense: '',
     savingGoal: '',
-    historicalSpentBeforeTracking: now.getDate() === 1 ? '0.00' : '',
     cycleStartDay: 1,
     fixedExpenseItems: []
   };
@@ -231,7 +228,7 @@ Page({
     drawerMode: 'first',
     drawerVisible: false,
     feedback: '',
-    form: emptyForm(new Date()),
+    form: emptyForm(),
     formErrors: EMPTY_ERRORS,
     fromShare: false,
     inputError: '',
@@ -257,6 +254,7 @@ Page({
     isExporting: false,
     isSaving: false,
     isTemplateSaving: false,
+    legacyHistoricalSpentText: '',
     quickTemplates: [],
     isRestoringBackup: false,
     noteInput: '',
@@ -301,7 +299,9 @@ Page({
     const fromShare = Boolean(options && options.from === 'share');
     let platform = '';
     try {
-      platform = wx.getSystemInfoSync().platform;
+      platform = typeof wx.getDeviceInfo === 'function'
+        ? wx.getDeviceInfo().platform
+        : wx.getSystemInfoSync().platform;
     } catch (error) {
       console.warn('无法读取当前平台', error);
     }
@@ -354,9 +354,10 @@ Page({
           budget: null,
           drawerMode: 'first',
           drawerVisible: true,
-          form: emptyForm(now),
+          form: emptyForm(),
           cycleStartDayIndex: 0,
           formErrors: Object.assign({}, EMPTY_ERRORS),
+          legacyHistoricalSpentText: '',
           readMessage: context.status === 'corrupt'
             ? '本地数据无法识别，已安全回到首次设置。'
             : '',
@@ -1026,9 +1027,6 @@ Page({
         income: centsToInput(budget.incomeCents),
         fixedExpense: centsToInput(budget.fixedExpenseCents),
         savingGoal: centsToInput(budget.savingGoalCents),
-        historicalSpentBeforeTracking: centsToInput(
-          budget.historicalSpentBeforeTrackingCents
-        ),
         cycleStartDay: budget.cycleStartDay || 1,
         fixedExpenseItems: (budget.fixedExpenseItems || []).map((item) => ({
           id: item.id,
@@ -1037,7 +1035,10 @@ Page({
         }))
       },
       cycleStartDayIndex: Math.max(0, (budget.cycleStartDay || 1) - 1),
-      formErrors: Object.assign({}, EMPTY_ERRORS)
+      formErrors: Object.assign({}, EMPTY_ERRORS),
+      legacyHistoricalSpentText: budget.historicalSpentBeforeTrackingCents > 0
+        ? formatCents(budget.historicalSpentBeforeTrackingCents)
+        : ''
     });
   },
 
@@ -1120,9 +1121,7 @@ Page({
     const errors = Object.assign({}, this.data.formErrors);
     const dependentFields = field === 'income' || field === 'fixedExpense'
       ? Object.keys(FIELD_CONFIG)
-      : field === 'historicalSpentBeforeTracking'
-        ? ['income', 'historicalSpentBeforeTracking']
-        : [field];
+      : [field];
     dependentFields.forEach((name) => { errors[name] = ''; });
     this.setData({ [`form.${field}`]: event.detail.value, formErrors: errors });
   },
@@ -1187,6 +1186,7 @@ Page({
         values[FIELD_CONFIG[field]] = parsed.value;
       }
     });
+    values.historicalSpentBeforeTrackingCents = 0;
     values.cycleStartDay = Number(this.data.form.cycleStartDay) || 1;
     values.fixedExpenseItems = [];
     (this.data.form.fixedExpenseItems || []).forEach((item) => {
@@ -1245,7 +1245,7 @@ Page({
     try {
       await budgetStore.saveBudget(validation.values, now);
       await this.refreshAfterMutation();
-      this.setData({ drawerVisible: false });
+      this.setData({ drawerVisible: false, legacyHistoricalSpentText: '' });
       wx.showToast({ title: '设置已保存', icon: 'success' });
     } catch (error) {
       console.error('保存设置失败', error);
@@ -1276,9 +1276,10 @@ Page({
             budget: null,
             drawerMode: 'first',
             drawerVisible: true,
-            form: emptyForm(now),
+            form: emptyForm(),
             cycleStartDayIndex: 0,
             formErrors: Object.assign({}, EMPTY_ERRORS),
+            legacyHistoricalSpentText: '',
             result: null,
             transactions: [],
             viewState: 'empty'

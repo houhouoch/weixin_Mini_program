@@ -95,6 +95,7 @@ check(
 );
 check(!/wx\.(get|set|remove|clear)Storage/.test(pageJs), '页面层不直接访问微信缓存');
 check(!pageJs.includes('wx.getFileSystemManager'), '页面层不直接访问微信文件系统管理器');
+check(pageJs.includes('wx.getDeviceInfo()'), '页面优先使用新版设备信息接口');
 check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
 check(pageJs.includes('onShareTimeline'), '实现朋友圈分享生命周期');
@@ -158,6 +159,22 @@ check(wxml.includes('完整数据备份与恢复') && wxml.includes('选择备�
 const stateSource = fs.readFileSync(path.join(root, 'services/state-store.js'), 'utf8');
 check(stateSource.includes('const SCHEMA_VERSION = 5'), '本地数据使用 schema 5');
 check(wxml.includes('bindchange="handleCycleStartDayChange"'), '设置支持自定义预算周期起始日');
+check(
+  wxml.includes('工资或父母发放生活费到账的日期')
+    && wxml.includes('15 日表示每月 15 日至下月 14 日'),
+  '预算周期用发薪或生活费到账日解释'
+);
+check(
+  wxml.includes('budget-field-heading__title">固定收入')
+    && wxml.includes('budget-field-heading__title">固定支出'),
+  '固定收入与固定支出使用醒目分组标题'
+);
+check(
+  !wxml.includes('data-field="historicalSpentBeforeTracking"')
+    && pageJs.includes('values.historicalSpentBeforeTrackingCents = 0;')
+    && wxml.includes('导入微信/支付宝账单'),
+  '设置移除启用前消费输入并引导按日期补记或导入'
+);
 check(wxml.includes('bindtap="saveCurrentAsTemplate"'), '快速记账支持保存常用模板');
 check(wxml.includes('bindtap="useQuickTemplate"'), '常用模板支持一键记账');
 check(!wxml.includes('分类预算提醒'), '页面不展示分类预算设置或提醒');
@@ -184,6 +201,10 @@ check(
 check(
   /\.fixed-expense-row__delete\s*\{[^}]*width:\s*112rpx[^}]*white-space:\s*nowrap/.test(wxss),
   '固定支出移除操作拥有独立宽度且禁止折行'
+);
+check(
+  /\.budget-field-heading__title\s*\{[^}]*font-size:\s*32rpx[^}]*font-weight:\s*850/.test(wxss),
+  '固定收支标题拥有更高字号和字重层级'
 );
 check(wxss.includes('.hero-card--todayOverspent'), '今日超额拥有独立视觉状态');
 check(wxss.includes('@media (prefers-reduced-motion: reduce)'), '动画尊重减少动态效果偏好');

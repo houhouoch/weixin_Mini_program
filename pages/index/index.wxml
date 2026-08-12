@@ -686,25 +686,32 @@
         >
           <view class="selector-field">{{cycleStartDays[cycleStartDayIndex].label}} · 更换</view>
         </picker>
-        <text class="field-helper">例如 15 日表示本月 15 日至下月 14 日；月报仍按自然月。</text>
+        <text class="field-helper">建议选择工资或父母发放生活费到账的日期。例如 15 日表示每月 15 日至下月 14 日；月报仍按自然月。</text>
       </view>
 
       <view class="form-field">
-        <text class="field-label">每个预算周期的固定收入</text>
+        <view class="budget-field-heading">
+          <text class="budget-field-heading__title">固定收入</text>
+          <text class="budget-field-heading__scope">每个预算周期</text>
+        </view>
         <view class="form-input {{formErrors.income ? 'form-input--error' : ''}}">
           <text>¥</text>
           <input type="digit" value="{{form.income}}" data-field="income" bindinput="handleFormInput" placeholder="例如 8000" aria-label="预算周期固定收入" />
         </view>
+        <text class="field-helper">工资、父母生活费等每个周期稳定到账的钱；外快和奖金请在首页单独记录。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.income}}">{{formErrors.income}}</text>
       </view>
 
       <view class="form-field">
-        <text class="field-label">每个预算周期的固定支出</text>
+        <view class="budget-field-heading">
+          <text class="budget-field-heading__title">固定支出</text>
+          <text class="budget-field-heading__scope">每个预算周期</text>
+        </view>
         <view class="form-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}">
           <text>¥</text>
           <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="预算周期固定支出" />
         </view>
-        <text class="field-helper">不包含日常吃饭、交通和购物。</text>
+        <text class="field-helper">房租、还款、会员等每个周期固定扣除的钱，不包含日常吃饭、交通和购物。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.fixedExpense}}">{{formErrors.fixedExpense}}</text>
       </view>
 
@@ -757,14 +764,10 @@
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
       </view>
 
-      <view class="form-field">
-        <text class="field-label">开始使用前，本周期已经花掉的日常消费</text>
-        <view class="form-input {{formErrors.historicalSpentBeforeTracking ? 'form-input--error' : ''}}">
-          <text>¥</text>
-          <input type="digit" value="{{form.historicalSpentBeforeTracking}}" data-field="historicalSpentBeforeTracking" bindinput="handleFormInput" placeholder="从周期开始到昨天" aria-label="开始使用前已经花掉的日常消费" />
-        </view>
-        <text class="field-helper">这里只填启用前日常消费；它与固定支出、已记录消费合计不能超过收入。</text>
-        <text class="field-error" aria-role="alert" wx:if="{{formErrors.historicalSpentBeforeTracking}}">{{formErrors.historicalSpentBeforeTracking}}</text>
+      <view class="budget-import-note">
+        <text class="budget-import-note__title">本周期已有消费怎么补齐？</text>
+        <text class="budget-import-note__copy">请在首页补记，或到“记录与历史”导入微信/支付宝账单；系统会按日期自动计入，无需在设置里重复填写。</text>
+        <text class="budget-import-note__legacy" wx:if="{{legacyHistoricalSpentText}}">检测到旧版启用前汇总 ¥{{legacyHistoricalSpentText}}；保存设置后将清零，请先补记或导入对应流水。</text>
       </view>
 
       <view class="local-only-note">

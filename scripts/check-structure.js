@@ -170,6 +170,12 @@ check(
   '固定收入与固定支出使用醒目分组标题'
 );
 check(
+  /budget-field-heading__title">固定收入<\/text>\s*<\/view>/.test(wxml)
+    && /budget-field-heading__title">固定支出<\/text>\s*<\/view>/.test(wxml)
+    && !wxml.includes('budget-field-heading__scope'),
+  '固定收入与固定支出标题不重复显示每个预算周期'
+);
+check(
   !wxml.includes('data-field="historicalSpentBeforeTracking"')
     && pageJs.includes('values.historicalSpentBeforeTrackingCents = 0;')
     && wxml.includes('导入微信/支付宝账单'),

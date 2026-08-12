@@ -692,7 +692,6 @@
       <view class="form-field">
         <view class="budget-field-heading">
           <text class="budget-field-heading__title">固定收入</text>
-          <text class="budget-field-heading__scope">每个预算周期</text>
         </view>
         <view class="form-input {{formErrors.income ? 'form-input--error' : ''}}">
           <text>¥</text>
@@ -705,7 +704,6 @@
       <view class="form-field">
         <view class="budget-field-heading">
           <text class="budget-field-heading__title">固定支出</text>
-          <text class="budget-field-heading__scope">每个预算周期</text>
         </view>
         <view class="form-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}">
           <text>¥</text>

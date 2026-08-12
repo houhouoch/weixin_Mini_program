@@ -1533,13 +1533,6 @@
   line-height: 1.25;
 }
 
-.budget-field-heading__scope {
-  margin-left: 14rpx;
-  color: var(--theme-muted, #66776E);
-  font-size: 21rpx;
-  font-weight: 650;
-}
-
 .form-input {
   display: flex;
   align-items: center;

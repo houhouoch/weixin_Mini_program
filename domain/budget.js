@@ -53,8 +53,10 @@ function validateBudgetAmounts(values, recordedSpentCents, recordedIncomeCents) 
     || (values.cycleStartDay || 1) > 28) {
     errors.income = '预算周期只能从每月 1 至 28 日开始';
   }
-  const fixedExpenseItems = values.fixedExpenseItems || [];
   const fixedExpenseMode = normalizeFixedExpenseMode(values.fixedExpenseMode);
+  const fixedExpenseItems = fixedExpenseMode === 'items'
+    ? (values.fixedExpenseItems || [])
+    : [];
   if (values.fixedExpenseMode !== undefined
     && !FIXED_EXPENSE_MODES.includes(values.fixedExpenseMode)) {
     errors.fixedExpense = '固定支出计算方式无效，请重新选择';
@@ -72,8 +74,6 @@ function validateBudgetAmounts(values, recordedSpentCents, recordedIncomeCents) 
     const itemTotal = fixedExpenseItems.reduce((sum, item) => sum + item.amountCents, 0);
     if (fixedExpenseMode === 'items' && itemTotal !== fixed) {
       errors.fixedExpense = `固定支出应等于明细合计 ¥${formatCents(itemTotal)}`;
-    } else if (fixedExpenseMode === 'manual' && itemTotal > fixed) {
-      errors.fixedExpense = `明细合计为 ¥${formatCents(itemTotal)}，请同步固定支出后再保存`;
     }
   }
 

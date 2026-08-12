@@ -93,7 +93,7 @@ test('budget store rejects impossible relations and keeps the last valid state',
   assert.equal((await budgetStore.loadBudgetContext(now)).budget.fixedExpenseCents, 400000);
 });
 
-test('fixed expense detail mode persists automatic totals and protects manual totals', async () => {
+test('fixed expense modes persist automatic details and keep manual totals independent', async () => {
   const now = new Date(2026, 7, 9, 10);
   await budgetStore.saveBudget({
     incomeCents: 800000,
@@ -110,7 +110,7 @@ test('fixed expense detail mode persists automatic totals and protects manual to
   assert.equal(loaded.budget.fixedExpenseMode, 'items');
   assert.equal(loaded.budget.fixedExpenseCents, 330000);
 
-  await assert.rejects(budgetStore.saveBudget({
+  await budgetStore.saveBudget({
     incomeCents: 800000,
     fixedExpenseCents: 300000,
     fixedExpenseMode: 'manual',
@@ -120,10 +120,11 @@ test('fixed expense detail mode persists automatic totals and protects manual to
       { id: 'rent', name: '房租', amountCents: 300000 },
       { id: 'phone', name: '话费', amountCents: 30000 }
     ]
-  }, now), /请同步固定支出后再保存/);
+  }, now);
   loaded = await budgetStore.loadBudgetContext(now);
-  assert.equal(loaded.budget.fixedExpenseMode, 'items');
-  assert.equal(loaded.budget.fixedExpenseCents, 330000);
+  assert.equal(loaded.budget.fixedExpenseMode, 'manual');
+  assert.equal(loaded.budget.fixedExpenseCents, 300000);
+  assert.deepEqual(loaded.budget.fixedExpenseItems, []);
 });
 
 test('transaction commands are idempotent and delete through addTransaction', async () => {

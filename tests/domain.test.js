@@ -78,7 +78,7 @@ test('budget relations reject impossible saving and spending combinations', () =
   }, 100000);
   assert.equal(valid.valid, true);
 
-  const fixedDetailsTooHigh = validateBudgetAmounts({
+  const manualIgnoresDetails = validateBudgetAmounts({
     incomeCents: 800000,
     fixedExpenseCents: 400000,
     savingGoalCents: 100000,
@@ -89,7 +89,7 @@ test('budget relations reject impossible saving and spending combinations', () =
       { id: 'phone', name: '话费', amountCents: 20000 }
     ]
   });
-  assert.match(fixedDetailsTooHigh.errors.fixedExpense, /明细合计为 ¥4100\.00，请同步固定支出/);
+  assert.equal(manualIgnoresDetails.valid, true);
 
   const automaticDetails = validateBudgetAmounts({
     incomeCents: 800000,

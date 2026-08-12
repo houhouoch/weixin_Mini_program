@@ -725,7 +725,7 @@
             <text class="fixed-expense-mode__current" wx:if="{{form.fixedExpenseMode === 'items'}}">当前</text>
           </button>
         </view>
-        <view class="form-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}" wx:if="{{form.fixedExpenseMode === 'manual'}}">
+        <view class="form-input fixed-expense-manual-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}" wx:if="{{form.fixedExpenseMode === 'manual'}}">
           <text>¥</text>
           <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="预算周期固定支出" />
         </view>
@@ -736,17 +736,16 @@
           </view>
           <text class="fixed-expense-calculated__amount">¥{{fixedExpenseItemTotalText}}</text>
         </view>
-        <text class="field-helper" wx:if="{{form.fixedExpenseMode === 'manual'}}">知道总额时直接填写；明细可以不填，也可以用来解释钱花在哪里。</text>
+        <text class="field-helper" wx:if="{{form.fixedExpenseMode === 'manual'}}">知道总额时，只需填写一个固定支出总额。</text>
         <text class="field-helper" wx:else>不知道总额时填写下方明细，系统会替你自动累加。</text>
         <text class="field-error" aria-role="alert" wx:if="{{formErrors.fixedExpense}}">{{formErrors.fixedExpense}}</text>
       </view>
 
-      <view class="budget-detail-section">
+      <view class="budget-detail-section" wx:if="{{form.fixedExpenseMode === 'items'}}">
         <view class="budget-detail-section__heading">
           <view>
-            <text class="budget-detail-section__title">固定支出明细（可选）</text>
-            <text class="field-helper" wx:if="{{form.fixedExpenseMode === 'manual'}}">少于总额的部分归为“其他固定支出”；超过时可一键同步。</text>
-            <text class="field-helper" wx:else>每项有效金额都会自动计入上方固定支出，不会生成流水。</text>
+            <text class="budget-detail-section__title">固定支出明细</text>
+            <text class="field-helper">每项有效金额都会自动计入上方固定支出，不会生成流水。</text>
           </view>
         </view>
         <button class="fixed-expense-add" bindtap="addFixedExpenseItem" aria-label="新增一项固定支出明细">
@@ -778,15 +777,6 @@
             />
           </view>
           <button class="fixed-expense-row__delete" data-index="{{index}}" bindtap="removeFixedExpenseItem" aria-label="移除这项固定支出明细">移除</button>
-        </view>
-        <view class="fixed-expense-summary {{fixedExpenseNeedsSync ? 'fixed-expense-summary--warning' : ''}}" wx:if="{{fixedExpenseDetailSummaryText}}">
-          <text class="fixed-expense-summary__copy">{{fixedExpenseDetailSummaryText}}</text>
-          <button
-            class="fixed-expense-summary__sync"
-            wx:if="{{fixedExpenseNeedsSync}}"
-            bindtap="syncFixedExpenseFromItems"
-            aria-label="将固定支出同步为明细合计"
-          >同步为 ¥{{fixedExpenseItemTotalText}}</button>
         </view>
       </view>
 

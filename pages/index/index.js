@@ -161,34 +161,13 @@ function fixedExpenseDraftState(sourceForm) {
     return parsed.ok ? sum + parsed.value : sum;
   }, 0);
   const totalText = formatCents(totalCents);
-  const manualParsed = parseYuanToCents(manualFixedExpense, {
-    allowZero: true,
-    maxCents: BUDGET_FIELD_MAX_CENTS
-  });
-  let summaryText = '';
-  let needsSync = false;
-
-  if (mode === 'manual' && items.length && manualParsed.ok) {
-    const differenceCents = totalCents - manualParsed.value;
-    if (differenceCents > 0) {
-      summaryText = `明细合计 ¥${totalText}，比固定支出多 ¥${formatCents(differenceCents)}`;
-      needsSync = true;
-    } else if (differenceCents === 0 && totalCents > 0) {
-      summaryText = `明细合计 ¥${totalText}，已与固定支出对齐`;
-    } else {
-      summaryText = `明细合计 ¥${totalText}，未拆分 ¥${formatCents(-differenceCents)} 将归为其他固定支出`;
-    }
-  }
 
   form.fixedExpenseMode = mode;
   form.manualFixedExpense = manualFixedExpense;
   if (mode === 'items') form.fixedExpense = totalText;
 
   return {
-    fixedExpenseDetailSummaryText: summaryText,
-    fixedExpenseItemTotalCents: totalCents,
     fixedExpenseItemTotalText: totalText,
-    fixedExpenseNeedsSync: needsSync,
     form
   };
 }
@@ -289,10 +268,7 @@ Page({
     feedback: '',
     form: emptyForm(),
     formErrors: EMPTY_ERRORS,
-    fixedExpenseDetailSummaryText: '',
-    fixedExpenseItemTotalCents: 0,
     fixedExpenseItemTotalText: '0.00',
-    fixedExpenseNeedsSync: false,
     fromShare: false,
     inputError: '',
     editDrawerVisible: false,
@@ -1258,23 +1234,6 @@ Page({
     }, fixedExpenseDraftState(form)));
   },
 
-  syncFixedExpenseFromItems() {
-    if (!this.data.fixedExpenseNeedsSync) return;
-    if (this.data.fixedExpenseItemTotalCents > BUDGET_FIELD_MAX_CENTS) {
-      this.setData({ 'formErrors.fixedExpense': '明细合计超过固定支出允许上限' });
-      return;
-    }
-    const fixedExpense = this.data.fixedExpenseItemTotalText;
-    const form = Object.assign({}, this.data.form, {
-      fixedExpense,
-      manualFixedExpense: fixedExpense
-    });
-    this.setData(Object.assign({
-      formErrors: Object.assign({}, this.data.formErrors, { fixedExpense: '' })
-    }, fixedExpenseDraftState(form)));
-    wx.showToast({ title: '已同步固定支出', icon: 'none' });
-  },
-
   validateBudgetForm() {
     const values = {};
     const errors = Object.assign({}, EMPTY_ERRORS);
@@ -1297,26 +1256,26 @@ Page({
       ? 'items'
       : 'manual';
     values.fixedExpenseItems = [];
-    (this.data.form.fixedExpenseItems || []).forEach((item) => {
-      const name = (item.name || '').trim();
-      const amount = (item.amount || '').trim();
-      if (!name && !amount) return;
-      const parsed = parseYuanToCents(amount, {
-        allowZero: false,
-        maxCents: BUDGET_FIELD_MAX_CENTS
-      });
-      if (!name || name.length > 12 || !parsed.ok) {
-        errors.fixedExpense = '请为每项固定支出填写 1–12 字名称和有效金额';
-        valid = false;
-        return;
-      }
-      values.fixedExpenseItems.push({
-        id: item.id || commandId('fixed'),
-        name,
-        amountCents: parsed.value
-      });
-    });
     if (values.fixedExpenseMode === 'items') {
+      (this.data.form.fixedExpenseItems || []).forEach((item) => {
+        const name = (item.name || '').trim();
+        const amount = (item.amount || '').trim();
+        if (!name && !amount) return;
+        const parsed = parseYuanToCents(amount, {
+          allowZero: false,
+          maxCents: BUDGET_FIELD_MAX_CENTS
+        });
+        if (!name || name.length > 12 || !parsed.ok) {
+          errors.fixedExpense = '请为每项固定支出填写 1–12 字名称和有效金额';
+          valid = false;
+          return;
+        }
+        values.fixedExpenseItems.push({
+          id: item.id || commandId('fixed'),
+          name,
+          amountCents: parsed.value
+        });
+      });
       const itemTotalCents = values.fixedExpenseItems
         .reduce((sum, item) => sum + item.amountCents, 0);
       if (itemTotalCents > BUDGET_FIELD_MAX_CENTS) {

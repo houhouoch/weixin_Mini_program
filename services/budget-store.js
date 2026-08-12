@@ -11,6 +11,7 @@ const {
 function makeBudget(values, now) {
   const cycleStartDay = values.cycleStartDay || 1;
   const cycle = budgetCycleRange(cycleStartDay, now);
+  const fixedExpenseMode = normalizeFixedExpenseMode(values.fixedExpenseMode);
   return {
     incomeCents: values.incomeCents,
     fixedExpenseCents: values.fixedExpenseCents,
@@ -19,12 +20,14 @@ function makeBudget(values, now) {
     trackingStartDate: values.trackingStartDate || toDateKey(now),
     cycleStartDay,
     activeCycleStartDate: cycle.startDateKey,
-    fixedExpenseMode: normalizeFixedExpenseMode(values.fixedExpenseMode),
-    fixedExpenseItems: (values.fixedExpenseItems || []).map((item) => ({
-      id: item.id,
-      name: item.name.trim(),
-      amountCents: item.amountCents
-    })),
+    fixedExpenseMode,
+    fixedExpenseItems: fixedExpenseMode === 'items'
+      ? (values.fixedExpenseItems || []).map((item) => ({
+        id: item.id,
+        name: item.name.trim(),
+        amountCents: item.amountCents
+      }))
+      : [],
     categoryBudgets: (values.categoryBudgets || []).map((item) => ({
       categoryId: item.categoryId,
       limitCents: item.limitCents

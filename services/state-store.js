@@ -52,6 +52,14 @@ function isValidCategoryBudget(item) {
 function isValidBudget(budget) {
   const fixedItems = budget && budget.fixedExpenseItems;
   const categoryBudgets = budget && budget.categoryBudgets;
+  const hasFixedExpenseMode = budget
+    && Object.prototype.hasOwnProperty.call(budget, 'fixedExpenseMode');
+  const fixedExpenseMode = budget && budget.fixedExpenseMode === 'items'
+    ? 'items'
+    : 'manual';
+  const fixedExpenseItemTotal = Array.isArray(fixedItems)
+    ? fixedItems.reduce((sum, item) => sum + item.amountCents, 0)
+    : 0;
   return Boolean(
     isValidLegacyBudget(budget)
     && isIntegerBetween(budget.cycleStartDay, 1, 28)
@@ -60,8 +68,12 @@ function isValidBudget(budget) {
     && fixedItems.length <= 12
     && fixedItems.every(isValidFixedExpenseItem)
     && new Set(fixedItems.map((item) => item.id)).size === fixedItems.length
-    && fixedItems.reduce((sum, item) => sum + item.amountCents, 0)
-      <= budget.fixedExpenseCents
+    && (!hasFixedExpenseMode
+      || budget.fixedExpenseMode === 'manual'
+      || budget.fixedExpenseMode === 'items')
+    && (fixedExpenseMode === 'items'
+      ? fixedExpenseItemTotal === budget.fixedExpenseCents
+      : fixedExpenseItemTotal <= budget.fixedExpenseCents)
     && Array.isArray(categoryBudgets)
     && categoryBudgets.length <= categoriesForDirection('expense').length
     && categoryBudgets.every(isValidCategoryBudget)
@@ -204,6 +216,7 @@ function schemaFiveBudget(budget, monthKey) {
   return Object.assign({}, budget, {
     cycleStartDay: 1,
     activeCycleStartDate: `${monthKey || budget.trackingStartDate.slice(0, 7)}-01`,
+    fixedExpenseMode: 'manual',
     fixedExpenseItems: [],
     categoryBudgets: []
   });

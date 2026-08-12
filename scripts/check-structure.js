@@ -189,6 +189,18 @@ check(
   '固定支出明细使用清晰的次级新增入口'
 );
 check(
+  wxml.includes('data-mode="manual"')
+    && wxml.includes('data-mode="items"')
+    && wxml.includes('bindtap="handleFixedExpenseModeChange"'),
+  '设置支持直接填写与明细合计两种方式'
+);
+check(
+  wxml.includes('明细自动合计')
+    && wxml.includes('bindtap="syncFixedExpenseFromItems"')
+    && pageJs.includes("if (mode === 'items') form.fixedExpense = totalText;"),
+  '固定支出支持明细实时累加与一键同步'
+);
+check(
   wxml.includes('aria-label="移除这项固定支出明细">移除</button>'),
   '固定支出明细使用单行移除操作'
 );
@@ -212,10 +224,28 @@ check(
   /\.budget-field-heading__title\s*\{[^}]*font-size:\s*32rpx[^}]*font-weight:\s*850/.test(wxss),
   '固定收支标题拥有更高字号和字重层级'
 );
+check(
+  /\.fixed-expense-mode__option\s*\{[^}]*min-height:\s*88rpx/.test(wxss)
+    && /\.fixed-expense-summary__sync\s*\{[^}]*min-height:\s*88rpx/.test(wxss),
+  '固定支出模式与同步操作满足 88rpx 触控高度'
+);
 check(wxss.includes('.hero-card--todayOverspent'), '今日超额拥有独立视觉状态');
 check(wxss.includes('@media (prefers-reduced-motion: reduce)'), '动画尊重减少动态效果偏好');
 
 const transactionSource = fs.readFileSync(path.join(root, 'services/transactions.js'), 'utf8');
+
+const budgetSource = fs.readFileSync(path.join(root, 'domain/budget.js'), 'utf8');
+const budgetStoreSource = fs.readFileSync(path.join(root, 'services/budget-store.js'), 'utf8');
+check(
+  budgetSource.includes("value === 'items' ? 'items' : 'manual'")
+    && budgetStoreSource.includes('fixedExpenseMode: normalizeFixedExpenseMode'),
+  '固定支出计算方式向后兼容并持久化'
+);
+check(
+  budgetSource.includes("fixedExpenseMode === 'items' && itemTotal !== fixed")
+    && stateSource.includes("fixedExpenseMode === 'items'"),
+  '明细合计模式要求总额严格等于明细'
+);
 check(
   /module\.exports\s*=\s*\{\s*addTransaction,\s*listTransactions\s*\}/.test(transactionSource),
   '交易模块仅公开 addTransaction/listTransactions'

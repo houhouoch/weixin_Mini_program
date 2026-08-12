@@ -89,7 +89,33 @@ test('budget relations reject impossible saving and spending combinations', () =
       { id: 'phone', name: '话费', amountCents: 20000 }
     ]
   });
-  assert.match(fixedDetailsTooHigh.errors.fixedExpense, /不能超过 ¥4000\.00/);
+  assert.match(fixedDetailsTooHigh.errors.fixedExpense, /明细合计为 ¥4100\.00，请同步固定支出/);
+
+  const automaticDetails = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 410000,
+    fixedExpenseMode: 'items',
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0,
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 390000 },
+      { id: 'phone', name: '话费', amountCents: 20000 }
+    ]
+  });
+  assert.equal(automaticDetails.valid, true);
+
+  const mismatchedAutomaticDetails = validateBudgetAmounts({
+    incomeCents: 800000,
+    fixedExpenseCents: 400000,
+    fixedExpenseMode: 'items',
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0,
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 390000 },
+      { id: 'phone', name: '话费', amountCents: 20000 }
+    ]
+  });
+  assert.match(mismatchedAutomaticDetails.errors.fixedExpense, /应等于明细合计 ¥4100\.00/);
 });
 
 test('ledger export creates a real xlsx zip with readable local transaction fields', () => {

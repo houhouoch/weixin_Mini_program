@@ -1,6 +1,6 @@
 const { budgetCycleRange, toDateKey, toMonthKey } = require('../domain/date');
 const { categoriesForDirection } = require('../domain/categories');
-const { validateBudgetAmounts } = require('../domain/budget');
+const { normalizeFixedExpenseMode, validateBudgetAmounts } = require('../domain/budget');
 const {
   archiveCurrentState,
   createState,
@@ -19,6 +19,7 @@ function makeBudget(values, now) {
     trackingStartDate: values.trackingStartDate || toDateKey(now),
     cycleStartDay,
     activeCycleStartDate: cycle.startDateKey,
+    fixedExpenseMode: normalizeFixedExpenseMode(values.fixedExpenseMode),
     fixedExpenseItems: (values.fixedExpenseItems || []).map((item) => ({
       id: item.id,
       name: item.name.trim(),
@@ -162,6 +163,7 @@ async function startNewMonth(mode, now) {
     savingGoalCents: previous.savingGoalCents,
     historicalSpentBeforeTrackingCents: 0,
     cycleStartDay: previous.cycleStartDay,
+    fixedExpenseMode: previous.fixedExpenseMode,
     fixedExpenseItems: previous.fixedExpenseItems,
     categoryBudgets: previous.categoryBudgets,
     trackingStartDate: previous.trackingStartDate

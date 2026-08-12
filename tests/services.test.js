@@ -56,6 +56,7 @@ test('empty, save and persisted load lifecycle', async () => {
   const loaded = await budgetStore.loadBudgetContext(now);
   assert.equal(loaded.status, 'ready');
   assert.equal(loaded.budget.incomeCents, 800000);
+  assert.equal(loaded.budget.fixedExpenseMode, 'manual');
 });
 
 test('budget store rejects impossible relations and keeps the last valid state', async () => {
@@ -90,6 +91,39 @@ test('budget store rejects impossible relations and keeps the last valid state',
     historicalSpentBeforeTrackingCents: 0
   }, now), /收入合计至少需要 ¥8500\.00/);
   assert.equal((await budgetStore.loadBudgetContext(now)).budget.fixedExpenseCents, 400000);
+});
+
+test('fixed expense detail mode persists automatic totals and protects manual totals', async () => {
+  const now = new Date(2026, 7, 9, 10);
+  await budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 330000,
+    fixedExpenseMode: 'items',
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0,
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 300000 },
+      { id: 'phone', name: '话费', amountCents: 30000 }
+    ]
+  }, now);
+  let loaded = await budgetStore.loadBudgetContext(now);
+  assert.equal(loaded.budget.fixedExpenseMode, 'items');
+  assert.equal(loaded.budget.fixedExpenseCents, 330000);
+
+  await assert.rejects(budgetStore.saveBudget({
+    incomeCents: 800000,
+    fixedExpenseCents: 300000,
+    fixedExpenseMode: 'manual',
+    savingGoalCents: 100000,
+    historicalSpentBeforeTrackingCents: 0,
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 300000 },
+      { id: 'phone', name: '话费', amountCents: 30000 }
+    ]
+  }, now), /请同步固定支出后再保存/);
+  loaded = await budgetStore.loadBudgetContext(now);
+  assert.equal(loaded.budget.fixedExpenseMode, 'items');
+  assert.equal(loaded.budget.fixedExpenseCents, 330000);
 });
 
 test('transaction commands are idempotent and delete through addTransaction', async () => {
@@ -998,6 +1032,7 @@ test('schema 4 migrates to schema 5 with safe budget-cycle defaults', async () =
   assert.equal(context.status, 'ready');
   assert.equal(context.budget.cycleStartDay, 1);
   assert.equal(context.budget.activeCycleStartDate, '2026-08-01');
+  assert.equal(context.budget.fixedExpenseMode || 'manual', 'manual');
   assert.deepEqual(context.budget.fixedExpenseItems, []);
   assert.deepEqual(context.budget.categoryBudgets, []);
   assert.deepEqual((await readState()).state.quickTemplates, []);
@@ -1011,7 +1046,11 @@ test('custom budget cycle survives calendar-month archiving and rolls on payday'
     savingGoalCents: 100000,
     historicalSpentBeforeTrackingCents: 5000,
     cycleStartDay: 15,
-    fixedExpenseItems: [{ id: 'rent', name: '房租', amountCents: 300000 }],
+    fixedExpenseMode: 'items',
+    fixedExpenseItems: [
+      { id: 'rent', name: '房租', amountCents: 300000 },
+      { id: 'utilities', name: '水电会员', amountCents: 100000 }
+    ],
     categoryBudgets: [{ categoryId: 'food', limitCents: 150000 }]
   }, august);
   await addTransaction({
@@ -1047,8 +1086,10 @@ test('custom budget cycle survives calendar-month archiving and rolls on payday'
   assert.equal(nextCycle.status, 'ready');
   assert.equal(nextCycle.budget.activeCycleStartDate, '2026-09-15');
   assert.equal(nextCycle.budget.historicalSpentBeforeTrackingCents, 0);
+  assert.equal(nextCycle.budget.fixedExpenseMode, 'items');
   assert.deepEqual(nextCycle.budget.fixedExpenseItems, [
-    { id: 'rent', name: '房租', amountCents: 300000 }
+    { id: 'rent', name: '房租', amountCents: 300000 },
+    { id: 'utilities', name: '水电会员', amountCents: 100000 }
   ]);
   state = (await readState()).state;
   assert.equal(state.transactions.length, 1);

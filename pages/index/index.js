@@ -61,6 +61,8 @@ const FIELD_CONFIG = {
   savingGoal: 'savingGoalCents'
 };
 
+const FIXED_EXPENSE_MODES = Object.freeze(['manual', 'items']);
+
 function commandId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -128,9 +130,66 @@ function emptyForm() {
   return {
     income: '',
     fixedExpense: '',
+    fixedExpenseMode: 'manual',
+    manualFixedExpense: '',
     savingGoal: '',
     cycleStartDay: 1,
     fixedExpenseItems: []
+  };
+}
+
+function parseFixedExpenseDraftAmount(value) {
+  const text = String(value == null ? '' : value).trim();
+  const normalized = /^\d+\.$/.test(text) ? text.slice(0, -1) : text;
+  return parseYuanToCents(normalized, {
+    allowZero: false,
+    maxCents: BUDGET_FIELD_MAX_CENTS
+  });
+}
+
+function fixedExpenseDraftState(sourceForm) {
+  const form = Object.assign({}, sourceForm);
+  const items = Array.isArray(form.fixedExpenseItems) ? form.fixedExpenseItems : [];
+  const mode = FIXED_EXPENSE_MODES.includes(form.fixedExpenseMode)
+    ? form.fixedExpenseMode
+    : 'manual';
+  const manualFixedExpense = form.manualFixedExpense === undefined
+    ? form.fixedExpense
+    : form.manualFixedExpense;
+  const totalCents = items.reduce((sum, item) => {
+    const parsed = parseFixedExpenseDraftAmount(item && item.amount);
+    return parsed.ok ? sum + parsed.value : sum;
+  }, 0);
+  const totalText = formatCents(totalCents);
+  const manualParsed = parseYuanToCents(manualFixedExpense, {
+    allowZero: true,
+    maxCents: BUDGET_FIELD_MAX_CENTS
+  });
+  let summaryText = '';
+  let needsSync = false;
+
+  if (mode === 'manual' && items.length && manualParsed.ok) {
+    const differenceCents = totalCents - manualParsed.value;
+    if (differenceCents > 0) {
+      summaryText = `明细合计 ¥${totalText}，比固定支出多 ¥${formatCents(differenceCents)}`;
+      needsSync = true;
+    } else if (differenceCents === 0 && totalCents > 0) {
+      summaryText = `明细合计 ¥${totalText}，已与固定支出对齐`;
+    } else {
+      summaryText = `明细合计 ¥${totalText}，未拆分 ¥${formatCents(-differenceCents)} 将归为其他固定支出`;
+    }
+  }
+
+  form.fixedExpenseMode = mode;
+  form.manualFixedExpense = manualFixedExpense;
+  if (mode === 'items') form.fixedExpense = totalText;
+
+  return {
+    fixedExpenseDetailSummaryText: summaryText,
+    fixedExpenseItemTotalCents: totalCents,
+    fixedExpenseItemTotalText: totalText,
+    fixedExpenseNeedsSync: needsSync,
+    form
   };
 }
 
@@ -230,6 +289,10 @@ Page({
     feedback: '',
     form: emptyForm(),
     formErrors: EMPTY_ERRORS,
+    fixedExpenseDetailSummaryText: '',
+    fixedExpenseItemTotalCents: 0,
+    fixedExpenseItemTotalText: '0.00',
+    fixedExpenseNeedsSync: false,
     fromShare: false,
     inputError: '',
     editDrawerVisible: false,
@@ -350,11 +413,10 @@ Page({
       }
 
       if (context.status === 'empty' || context.status === 'corrupt') {
-        this.setData({
+        this.setData(Object.assign({
           budget: null,
           drawerMode: 'first',
           drawerVisible: true,
-          form: emptyForm(),
           cycleStartDayIndex: 0,
           formErrors: Object.assign({}, EMPTY_ERRORS),
           legacyHistoricalSpentText: '',
@@ -365,7 +427,7 @@ Page({
           historyTransactions: [],
           transactions: [],
           viewState: 'empty'
-        });
+        }, fixedExpenseDraftState(emptyForm())));
         return;
       }
 
@@ -1020,26 +1082,29 @@ Page({
   openSettings() {
     if (!this.data.budget) return;
     const budget = this.data.budget;
-    this.setData({
+    const fixedExpense = centsToInput(budget.fixedExpenseCents);
+    const form = {
+      income: centsToInput(budget.incomeCents),
+      fixedExpense,
+      fixedExpenseMode: budget.fixedExpenseMode === 'items' ? 'items' : 'manual',
+      manualFixedExpense: fixedExpense,
+      savingGoal: centsToInput(budget.savingGoalCents),
+      cycleStartDay: budget.cycleStartDay || 1,
+      fixedExpenseItems: (budget.fixedExpenseItems || []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        amount: centsToInput(item.amountCents)
+      }))
+    };
+    this.setData(Object.assign({
       drawerMode: 'edit',
       drawerVisible: true,
-      form: {
-        income: centsToInput(budget.incomeCents),
-        fixedExpense: centsToInput(budget.fixedExpenseCents),
-        savingGoal: centsToInput(budget.savingGoalCents),
-        cycleStartDay: budget.cycleStartDay || 1,
-        fixedExpenseItems: (budget.fixedExpenseItems || []).map((item) => ({
-          id: item.id,
-          name: item.name,
-          amount: centsToInput(item.amountCents)
-        }))
-      },
       cycleStartDayIndex: Math.max(0, (budget.cycleStartDay || 1) - 1),
       formErrors: Object.assign({}, EMPTY_ERRORS),
       legacyHistoricalSpentText: budget.historicalSpentBeforeTrackingCents > 0
         ? formatCents(budget.historicalSpentBeforeTrackingCents)
         : ''
-    });
+    }, fixedExpenseDraftState(form)));
   },
 
   closeDrawer() {
@@ -1123,7 +1188,24 @@ Page({
       ? Object.keys(FIELD_CONFIG)
       : [field];
     dependentFields.forEach((name) => { errors[name] = ''; });
+    if (field === 'fixedExpense') {
+      const form = Object.assign({}, this.data.form, {
+        fixedExpense: event.detail.value,
+        manualFixedExpense: event.detail.value
+      });
+      this.setData(Object.assign({ formErrors: errors }, fixedExpenseDraftState(form)));
+      return;
+    }
     this.setData({ [`form.${field}`]: event.detail.value, formErrors: errors });
+  },
+
+  handleFixedExpenseModeChange(event) {
+    const mode = event.currentTarget.dataset.mode;
+    if (!FIXED_EXPENSE_MODES.includes(mode) || mode === this.data.form.fixedExpenseMode) return;
+    const form = Object.assign({}, this.data.form, { fixedExpenseMode: mode });
+    if (mode === 'manual') form.fixedExpense = form.manualFixedExpense;
+    const errors = Object.assign({}, this.data.formErrors, { fixedExpense: '' });
+    this.setData(Object.assign({ formErrors: errors }, fixedExpenseDraftState(form)));
   },
 
   handleCycleStartDayChange(event) {
@@ -1146,17 +1228,23 @@ Page({
       name: '',
       amount: ''
     });
-    this.setData({ 'form.fixedExpenseItems': fixedExpenseItems });
+    const form = Object.assign({}, this.data.form, { fixedExpenseItems });
+    this.setData(Object.assign({
+      formErrors: Object.assign({}, this.data.formErrors, { fixedExpense: '' })
+    }, fixedExpenseDraftState(form)));
   },
 
   handleFixedExpenseItemInput(event) {
     const index = Number(event.currentTarget.dataset.index);
     const field = event.currentTarget.dataset.field;
     if (!Number.isInteger(index) || (field !== 'name' && field !== 'amount')) return;
-    this.setData({
-      [`form.fixedExpenseItems[${index}].${field}`]: event.detail.value,
-      'formErrors.fixedExpense': ''
-    });
+    const fixedExpenseItems = this.data.form.fixedExpenseItems.map((item, itemIndex) =>
+      itemIndex === index ? Object.assign({}, item, { [field]: event.detail.value }) : item
+    );
+    const form = Object.assign({}, this.data.form, { fixedExpenseItems });
+    this.setData(Object.assign({
+      formErrors: Object.assign({}, this.data.formErrors, { fixedExpense: '' })
+    }, fixedExpenseDraftState(form)));
   },
 
   removeFixedExpenseItem(event) {
@@ -1164,10 +1252,27 @@ Page({
     if (!Number.isInteger(index)) return;
     const fixedExpenseItems = this.data.form.fixedExpenseItems
       .filter((_, itemIndex) => itemIndex !== index);
-    this.setData({
-      'form.fixedExpenseItems': fixedExpenseItems,
-      'formErrors.fixedExpense': ''
+    const form = Object.assign({}, this.data.form, { fixedExpenseItems });
+    this.setData(Object.assign({
+      formErrors: Object.assign({}, this.data.formErrors, { fixedExpense: '' })
+    }, fixedExpenseDraftState(form)));
+  },
+
+  syncFixedExpenseFromItems() {
+    if (!this.data.fixedExpenseNeedsSync) return;
+    if (this.data.fixedExpenseItemTotalCents > BUDGET_FIELD_MAX_CENTS) {
+      this.setData({ 'formErrors.fixedExpense': '明细合计超过固定支出允许上限' });
+      return;
+    }
+    const fixedExpense = this.data.fixedExpenseItemTotalText;
+    const form = Object.assign({}, this.data.form, {
+      fixedExpense,
+      manualFixedExpense: fixedExpense
     });
+    this.setData(Object.assign({
+      formErrors: Object.assign({}, this.data.formErrors, { fixedExpense: '' })
+    }, fixedExpenseDraftState(form)));
+    wx.showToast({ title: '已同步固定支出', icon: 'none' });
   },
 
   validateBudgetForm() {
@@ -1188,6 +1293,9 @@ Page({
     });
     values.historicalSpentBeforeTrackingCents = 0;
     values.cycleStartDay = Number(this.data.form.cycleStartDay) || 1;
+    values.fixedExpenseMode = this.data.form.fixedExpenseMode === 'items'
+      ? 'items'
+      : 'manual';
     values.fixedExpenseItems = [];
     (this.data.form.fixedExpenseItems || []).forEach((item) => {
       const name = (item.name || '').trim();
@@ -1208,6 +1316,16 @@ Page({
         amountCents: parsed.value
       });
     });
+    if (values.fixedExpenseMode === 'items') {
+      const itemTotalCents = values.fixedExpenseItems
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      if (itemTotalCents > BUDGET_FIELD_MAX_CENTS) {
+        errors.fixedExpense = '明细合计超过固定支出允许上限';
+        valid = false;
+      } else {
+        values.fixedExpenseCents = itemTotalCents;
+      }
+    }
     values.categoryBudgets = [];
     if (valid) {
       const recordedSpentCents = this.data.transactions
@@ -1272,18 +1390,17 @@ Page({
         try {
           await budgetStore.resetCurrentMonth(new Date());
           const now = new Date();
-          this.setData({
+          this.setData(Object.assign({
             budget: null,
             drawerMode: 'first',
             drawerVisible: true,
-            form: emptyForm(),
             cycleStartDayIndex: 0,
             formErrors: Object.assign({}, EMPTY_ERRORS),
             legacyHistoricalSpentText: '',
             result: null,
             transactions: [],
             viewState: 'empty'
-          });
+          }, fixedExpenseDraftState(emptyForm())));
         } catch (error) {
           console.error('重置失败', error);
           wx.showToast({ title: '重置失败，请重试', icon: 'none' });

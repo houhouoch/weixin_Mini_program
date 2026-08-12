@@ -12,6 +12,11 @@ const BUDGET_ERROR_FIELDS = Object.freeze([
 ]);
 
 const FIXED_EXPENSE_ITEM_LIMIT = 12;
+const FIXED_EXPENSE_MODES = Object.freeze(['manual', 'items']);
+
+function normalizeFixedExpenseMode(value) {
+  return value === 'items' ? 'items' : 'manual';
+}
 
 function emptyBudgetErrors() {
   return BUDGET_ERROR_FIELDS.reduce((errors, field) => {
@@ -49,6 +54,11 @@ function validateBudgetAmounts(values, recordedSpentCents, recordedIncomeCents) 
     errors.income = '预算周期只能从每月 1 至 28 日开始';
   }
   const fixedExpenseItems = values.fixedExpenseItems || [];
+  const fixedExpenseMode = normalizeFixedExpenseMode(values.fixedExpenseMode);
+  if (values.fixedExpenseMode !== undefined
+    && !FIXED_EXPENSE_MODES.includes(values.fixedExpenseMode)) {
+    errors.fixedExpense = '固定支出计算方式无效，请重新选择';
+  }
   if (!Array.isArray(fixedExpenseItems)
     || fixedExpenseItems.length > FIXED_EXPENSE_ITEM_LIMIT
     || fixedExpenseItems.some((item) => !item
@@ -60,8 +70,10 @@ function validateBudgetAmounts(values, recordedSpentCents, recordedIncomeCents) 
     errors.fixedExpense = '固定支出明细无效，请检查名称和金额';
   } else {
     const itemTotal = fixedExpenseItems.reduce((sum, item) => sum + item.amountCents, 0);
-    if (itemTotal > fixed) {
-      errors.fixedExpense = `固定支出明细合计不能超过 ¥${formatCents(fixed)}`;
+    if (fixedExpenseMode === 'items' && itemTotal !== fixed) {
+      errors.fixedExpense = `固定支出应等于明细合计 ¥${formatCents(itemTotal)}`;
+    } else if (fixedExpenseMode === 'manual' && itemTotal > fixed) {
+      errors.fixedExpense = `明细合计为 ¥${formatCents(itemTotal)}，请同步固定支出后再保存`;
     }
   }
 
@@ -184,4 +196,8 @@ function deriveBudget(budget, transactions, value) {
   };
 }
 
-module.exports = { deriveBudget, validateBudgetAmounts };
+module.exports = {
+  deriveBudget,
+  normalizeFixedExpenseMode,
+  validateBudgetAmounts
+};

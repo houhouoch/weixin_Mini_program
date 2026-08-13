@@ -1,0 +1,9 @@
+{
+  "desc": "今天还能花首页",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "pages/index/index"
+    }
+  ]
+}

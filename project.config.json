@@ -19,6 +19,10 @@
     "ignore": [
       {
         "type": "folder",
+        "value": "today-can-spend-minimal"
+      },
+      {
+        "type": "folder",
         "value": "design-system"
       },
       {

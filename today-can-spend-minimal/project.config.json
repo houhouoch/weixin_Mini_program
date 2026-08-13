@@ -1,0 +1,31 @@
+{
+  "appid": "touristappid",
+  "projectname": "today-can-spend-minimal",
+  "description": "今天还能花独立简约版",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "setting": {
+    "useCompilerPlugins": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "coverView": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "condition": {},
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "design-system" },
+      { "type": "folder", "value": "docs" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "specs" },
+      { "type": "folder", "value": "tests" },
+      { "type": "file", "value": "AGENTS.md" },
+      { "type": "file", "value": "Agent.md" },
+      { "type": "file", "value": "README.md" }
+    ],
+    "include": []
+  }
+}

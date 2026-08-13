@@ -1,0 +1,931 @@
+<view class="page-shell" style="{{themeStyle}}">
+  <view class="share-entry" wx:if="{{fromShare && viewState !== 'ready'}}">
+    <text class="share-entry__eyebrow">朋友分享给你一个简单的预算方法</text>
+    <text class="share-entry__title">开始我的收支记录</text>
+    <text class="share-entry__copy">数据只会保存在你自己的设备中。</text>
+  </view>
+
+  <view class="page-topbar">
+    <view class="page-topbar__copy">
+      <text class="page-title">今天还能花</text>
+      <text class="date-label">{{dateLabel}}</text>
+    </view>
+    <button
+      wx:if="{{viewState === 'ready'}}"
+      class="settings-button"
+      bindtap="openSettings"
+      aria-label="修改预算设置"
+    >设置</button>
+  </view>
+
+  <view class="loading-card" wx:if="{{viewState === 'loading'}}">
+    <view class="skeleton skeleton-short"></view>
+    <view class="skeleton skeleton-amount"></view>
+    <view class="skeleton skeleton-copy"></view>
+  </view>
+
+  <view class="error-card" wx:if="{{viewState === 'readError'}}">
+    <text class="error-card__title">暂时没读到本地数据</text>
+    <text class="error-card__copy">{{readMessage}}</text>
+    <button class="secondary-button" bindtap="refreshPage">重新读取</button>
+  </view>
+
+  <block wx:if="{{viewState === 'ready'}}">
+    <view class="budget-hero hero-card hero-card--{{statusTone}}">
+      <view class="hero-content">
+        <text class="hero-eyebrow">{{result.heroEyebrow}}</text>
+        <view class="hero-amount {{amountSizeClass}}">
+          <text>{{result.heroAmountText}}</text>
+        </view>
+        <view class="hero-status">
+          <text>{{result.heroStatusLine1}}</text>
+          <text>{{result.heroStatusLine2}}</text>
+        </view>
+        <text class="hero-badge">{{result.heroBadge}}</text>
+      </view>
+    </view>
+
+    <view class="budget-rail progress-row budget-rail--{{statusTone}}">
+      <view class="budget-rail__labels">
+        <text>今天已花 ¥{{result.todaySpentText}}</text>
+        <text wx:if="{{result.monthlyRemainingNegative}}">{{result.periodLabel}}超支 ¥{{result.monthlyOverspentText}}</text>
+        <text wx:else>{{result.periodLabel}}可用 ¥{{result.monthlyRemainingText}}</text>
+      </view>
+      <view class="budget-rail__track">
+        <view class="budget-rail__spent" style="width: {{result.spentProgressPercent}}%;"></view>
+      </view>
+      <text class="budget-rail__helper">建议额度 ¥{{result.todaySuggestedBudgetText}} · {{result.statusText}}</text>
+      <text class="budget-rail__cycle" wx:if="{{result.periodLabel === '本周期'}}">预算周期 {{result.cycleRangeText}}</text>
+      <text class="budget-rail__income" wx:if="{{result.recordedIncomeText !== '0.00'}}">{{result.periodLabel}}额外收入 +¥{{result.recordedIncomeText}}</text>
+    </view>
+
+    <view class="quick-record record-composer">
+      <view class="composer-heading">
+        <view>
+          <text class="composer-title">快速记一笔</text>
+          <text class="composer-heading__summary">默认使用上次分类，输入金额即可保存</text>
+        </view>
+        <text class="composer-heading__privacy">本机</text>
+      </view>
+
+      <view class="composer-body">
+        <view class="direction-switch" role="tablist" aria-label="选择记录支出或收入">
+          <button
+            class="direction-switch__button {{recordDirection === 'expense' ? 'direction-switch__button--active' : ''}}"
+            data-direction="expense"
+            bindtap="handleRecordDirection"
+            disabled="{{isSaving}}"
+            aria-label="记录支出"
+          >支出</button>
+          <button
+            class="direction-switch__button {{recordDirection === 'income' ? 'direction-switch__button--active' : ''}}"
+            data-direction="income"
+            bindtap="handleRecordDirection"
+            disabled="{{isSaving}}"
+            aria-label="记录收入"
+          >收入</button>
+        </view>
+        <text class="composer-copy" wx:if="{{recordDirection === 'expense'}}">用途可以不写，直接输入金额即可。</text>
+        <text class="composer-copy" wx:else>记录外快、奖金等额外收入；固定收入无需重复记录。</text>
+
+        <view class="composer-action-row">
+          <view class="composer-amount {{inputError ? 'composer-field--error' : ''}}">
+            <text>¥</text>
+            <input
+              class="composer-amount__input"
+              type="digit"
+              value="{{amountInput}}"
+              placeholder="0.00"
+              maxlength="10"
+              bindinput="handleAmountInput"
+              confirm-type="done"
+              aria-label="输入本次{{recordDirection === 'income' ? '收入' : '支出'}}金额"
+            />
+          </view>
+          <button
+            class="composer-save {{isSaving ? 'composer-save--loading' : ''}}"
+            bindtap="handleAddTransaction"
+            disabled="{{isSaving}}"
+            loading="{{isSaving}}"
+          >{{isSaving ? '保存中…' : (recordDirection === 'income' ? '记下收入' : '记下支出')}}</button>
+        </view>
+        <view class="composer-feedback" wx:if="{{inputError || feedback}}">
+          <text class="field-error" aria-role="alert" wx:if="{{inputError}}">{{inputError}}</text>
+          <text class="field-success" aria-role="status" wx:if="{{feedback}}">{{feedback}}</text>
+        </view>
+
+        <button
+          class="composer-details-toggle"
+          bindtap="toggleComposerDetails"
+          aria-label="{{composerDetailsOpen ? '收起分类、用途与模板管理' : '展开分类、用途与模板管理'}}"
+          aria-expanded="{{composerDetailsOpen}}"
+        >
+          <view class="composer-details-toggle__copy">
+            <text>补充信息</text>
+            <text wx:for="{{categories}}" wx:key="id" wx:if="{{selectedCategoryId === item.id}}">当前分类：{{item.label}} · 用途可选</text>
+          </view>
+          <text class="composer-details-toggle__action">{{composerDetailsOpen ? '收起' : '调整'}}</text>
+        </button>
+
+        <view class="quick-templates" wx:if="{{quickTemplates.length}}">
+          <view class="quick-templates__heading">
+            <text>常用模板</text>
+            <text>点一下直接记在现在</text>
+          </view>
+          <view class="quick-template" wx:for="{{quickTemplates}}" wx:key="id">
+            <button
+              class="quick-template__use"
+              data-id="{{item.id}}"
+              bindtap="useQuickTemplate"
+              disabled="{{isSaving}}"
+              aria-label="使用{{item.title}}{{item.amountText}}元模板记账"
+            >
+              <view>
+                <text class="quick-template__title">{{item.title}}</text>
+                <text class="quick-template__meta">{{item.direction === 'income' ? '收入' : '支出'}} · {{item.categoryLabel}}</text>
+              </view>
+              <text class="quick-template__amount">¥{{item.amountText}}</text>
+            </button>
+            <button wx:if="{{composerDetailsOpen}}" class="quick-template__delete" data-id="{{item.id}}" bindtap="deleteQuickTemplate" aria-label="删除{{item.title}}模板">删除</button>
+          </view>
+        </view>
+
+        <view class="composer-details" wx:if="{{composerDetailsOpen}}">
+          <text class="composer-label">分类（已默认选择，可更改）</text>
+          <view class="category-grid" role="list">
+            <button
+              wx:for="{{categories}}"
+              wx:key="id"
+              class="category-chip {{selectedCategoryId === item.id ? 'category-chip--selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="handleCategorySelect"
+              aria-label="选择{{recordDirection === 'income' ? '收入' : '支出'}}分类{{item.label}}"
+            >{{item.label}}</button>
+          </view>
+
+          <text class="composer-label">{{recordDirection === 'income' ? '来源' : '用途'}}（可选）</text>
+          <input
+            class="purpose-field"
+            type="text"
+            value="{{noteInput}}"
+            placeholder="{{recordDirection === 'income' ? '例如：周末兼职、项目奖金' : '例如：咖啡、午餐、地铁'}}"
+            maxlength="20"
+            bindinput="handleNoteInput"
+            aria-label="填写{{recordDirection === 'income' ? '收入来源' : '消费用途'}}"
+          />
+
+          <button
+            class="template-save-button"
+            bindtap="saveCurrentAsTemplate"
+            disabled="{{isSaving || isTemplateSaving}}"
+          >{{isTemplateSaving ? '正在保存模板…' : '把当前内容保存为常用模板'}}</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="review-card collapsible-section {{sections.review ? '' : 'collapsible-section--collapsed'}}">
+      <button
+        class="section-toggle"
+        data-section="review"
+        bindtap="toggleSection"
+        aria-label="{{sections.review ? '收起消费回看' : '展开消费回看'}}"
+      >
+        <view class="section-toggle__copy">
+          <text class="review-title">消费回看</text>
+          <text class="section-toggle__summary">日 / 月 / 年 / 自定义</text>
+        </view>
+        <text class="section-toggle__action">{{sections.review ? '收起' : '展开'}}</text>
+      </button>
+
+      <view class="fold-content" wx:if="{{sections.review}}">
+        <text class="review-subtitle">先看趋势，不把首页变成复杂报表</text>
+
+        <view class="review-tabs" role="tablist" aria-label="选择消费回看范围">
+          <button
+            wx:for="{{reviewPeriods}}"
+            wx:key="id"
+            class="review-tab {{reviewPeriod === item.id ? 'review-tab--active' : ''}}"
+            data-period="{{item.id}}"
+            bindtap="handleReviewPeriod"
+            aria-label="查看{{item.label}}消费回看"
+          >{{item.label}}</button>
+        </view>
+
+        <view class="review-range" wx:if="{{reviewPeriod === 'custom'}}">
+          <picker
+            class="review-range__picker"
+            mode="date"
+            value="{{reviewRangeStartKey}}"
+            start="{{reviewRangeMinKey}}"
+            end="{{reviewRangeEndKey}}"
+            bindchange="handleReviewRangeStartChange"
+            aria-label="选择支出统计开始日期"
+          >
+            <view class="review-range__field">
+              <text class="review-range__label">开始日期</text>
+              <text class="review-range__value">{{reviewRangeStartKey}}</text>
+            </view>
+          </picker>
+          <text class="review-range__separator">至</text>
+          <picker
+            class="review-range__picker"
+            mode="date"
+            value="{{reviewRangeEndKey}}"
+            start="{{reviewRangeStartKey}}"
+            end="{{reviewRangeMaxKey}}"
+            bindchange="handleReviewRangeEndChange"
+            aria-label="选择支出统计结束日期"
+          >
+            <view class="review-range__field">
+              <text class="review-range__label">结束日期</text>
+              <text class="review-range__value">{{reviewRangeEndKey}}</text>
+            </view>
+          </picker>
+        </view>
+
+        <view class="review-loading" wx:if="{{reviewLoading}}" aria-role="status">正在整理本地记录…</view>
+        <view class="review-error" wx:elif="{{reviewError}}" aria-role="alert">{{reviewError}}</view>
+        <block wx:elif="{{reviewSummary}}">
+          <view class="review-metrics">
+            <view class="review-metric" wx:for="{{reviewSummary.metrics}}" wx:key="label">
+              <text class="review-metric__label">{{item.label}}</text>
+              <text class="review-metric__value">{{item.value}}</text>
+            </view>
+          </view>
+
+          <view class="weekly-summary" wx:if="{{reviewPeriod === 'day' && reviewSummary.weeklySummary}}">
+            <view class="weekly-summary__heading">
+              <text class="weekly-summary__title">本周总结</text>
+              <text class="weekly-summary__scope">{{reviewSummary.weeklySummary.scopeText}}</text>
+            </view>
+            <view class="weekly-summary__totals">
+              <view><text>本周</text><text>{{reviewSummary.weeklySummary.currentText}}</text></view>
+              <view><text>上周同期</text><text>{{reviewSummary.weeklySummary.previousText}}</text></view>
+            </view>
+            <text class="weekly-summary__comparison">{{reviewSummary.weeklySummary.comparisonText}}</text>
+            <view class="weekly-summary__insights">
+              <text>主要分类：{{reviewSummary.weeklySummary.topCategoryText}}</text>
+              <text>增加最多：{{reviewSummary.weeklySummary.risingCategoryText}}</text>
+            </view>
+          </view>
+
+          <view class="review-chart" aria-label="消费趋势柱状图">
+            <view
+              class="review-bar"
+              wx:for="{{reviewSummary.chart}}"
+              wx:key="fullLabel"
+              aria-label="{{item.accessibilityLabel}}"
+            >
+              <view class="review-bar__track">
+                <view class="review-bar__fill {{item.label === '今' ? 'review-bar__fill--today' : ''}}" style="height: {{item.percent}}%;"></view>
+              </view>
+              <text class="review-bar__label">{{item.label}}</text>
+            </view>
+          </view>
+
+          <text class="review-insight">{{reviewSummary.insightText}}</text>
+          <text class="review-scope">{{reviewSummary.scopeText}}</text>
+
+          <block wx:if="{{reviewPeriod === 'custom'}}">
+            <view class="review-breakdown" wx:if="{{reviewSummary.categoryBreakdown.length}}">
+              <view class="review-breakdown__header">
+                <text class="review-breakdown__title">支出分类</text>
+                <text class="review-breakdown__hint">点击分类查看对应流水</text>
+              </view>
+              <button
+                class="review-category"
+                wx:for="{{reviewSummary.categoryBreakdown}}"
+                wx:key="categoryId"
+                data-category="{{item.categoryId}}"
+                data-label="{{item.categoryLabel}}"
+                bindtap="handleReviewCategoryDetail"
+                aria-label="查看{{item.categoryLabel}}{{item.count}}笔支出明细"
+              >
+                <view class="review-category__copy">
+                  <text class="review-category__name">{{item.categoryLabel}}</text>
+                  <text class="review-category__meta">{{item.count}}笔 · {{item.percent}}%</text>
+                </view>
+                <text class="review-category__amount">{{item.amountText}}</text>
+              </button>
+            </view>
+
+            <button
+              class="review-detail-toggle"
+              bindtap="toggleReviewDetails"
+              disabled="{{reviewSummary.recordCount === 0}}"
+            >{{reviewDetailVisible ? '收起区间流水' : '查看全部区间流水（' + reviewSummary.recordCount + '笔）'}}</button>
+
+            <view class="review-detail" wx:if="{{reviewDetailVisible}}">
+              <view class="review-detail__header">
+                <text class="review-detail__title">{{reviewDetailCategoryLabel}}</text>
+                <button
+                  wx:if="{{reviewDetailCategoryId}}"
+                  class="review-detail__all"
+                  bindtap="clearReviewCategoryDetail"
+                >关闭筛选</button>
+              </view>
+              <view class="review-loading" wx:if="{{reviewDetailLoading}}">正在读取区间流水…</view>
+              <view class="review-error" wx:elif="{{reviewDetailError}}">{{reviewDetailError}}</view>
+              <view class="empty-records" wx:elif="{{reviewTransactions.length === 0}}">
+                <text class="empty-records__title">这个筛选下没有支出</text>
+              </view>
+              <view class="record-list review-record-list" wx:else>
+                <view class="record-row record-row--expense" wx:for="{{reviewTransactions}}" wx:key="id">
+                  <text class="record-tag record-tag--{{item.categoryId}}">{{item.categoryLabel}}</text>
+                  <view class="record-main">
+                    <text class="record-purpose">{{item.purposeText}}</text>
+                    <text class="record-time">{{item.occurredAtText}}</text>
+                  </view>
+                  <view class="record-tail">
+                    <text class="record-amount record-amount--expense">- ¥{{item.amountText}}</text>
+                    <view class="record-actions">
+                      <button class="edit-record-button" data-id="{{item.id}}" bindtap="openEditTransaction">修改</button>
+                      <button class="delete-button" data-id="{{item.id}}" bindtap="handleDeleteTransaction">删除</button>
+                    </view>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </block>
+        </block>
+      </view>
+    </view>
+
+    <view class="receipt-card collapsible-section {{sections.history ? '' : 'collapsible-section--collapsed'}}">
+      <button
+        class="section-toggle section-toggle--receipt"
+        data-section="history"
+        bindtap="toggleSection"
+        aria-label="{{sections.history ? '收起记录与历史' : '展开记录与历史'}}"
+      >
+        <view class="section-toggle__copy">
+          <text class="receipt-title">账本与数据</text>
+          <text class="section-toggle__summary">历史 · 修改 · 导入 · 导出 · 备份</text>
+        </view>
+        <text class="section-toggle__action">{{sections.history ? '收起' : '展开'}}</text>
+      </button>
+
+      <view class="fold-content data-tools" wx:if="{{sections.history}}">
+        <view class="history-toolbar">
+          <view class="history-toolbar__copy">
+            <text class="history-toolbar__label">查看日期</text>
+            <text class="history-toolbar__summary">{{historyTransactions.length}} 笔 · 支出 ¥{{historyExpenseText}} · 收入 ¥{{historyIncomeText}}</text>
+          </view>
+          <picker
+            mode="date"
+            value="{{historyDateKey}}"
+            end="{{historyMaxDateKey}}"
+            bindchange="handleHistoryDateChange"
+            aria-label="选择要查看的历史日期"
+          >
+            <view class="history-date-button">{{historyDateLabel}} · 更换</view>
+          </picker>
+        </view>
+
+        <view class="history-loading" wx:if="{{historyLoading}}" aria-role="status">正在读取这一天的明细…</view>
+        <view class="history-error" wx:elif="{{historyError}}" aria-role="alert">{{historyError}}</view>
+        <view class="empty-records" wx:elif="{{historyTransactions.length === 0}}">
+          <text class="empty-records__title">这一天没有逐笔记录</text>
+          <text class="empty-records__copy">启用前汇总不会伪装成某一天的明细。</text>
+        </view>
+
+        <view class="record-list" wx:else>
+          <view class="record-row record-row--{{item.direction}}" wx:for="{{historyTransactions}}" wx:key="id">
+            <text class="record-tag record-tag--{{item.categoryId}}">{{item.categoryLabel}}</text>
+            <view class="record-main">
+              <text class="record-purpose">{{item.purposeText}}</text>
+              <text class="record-time">{{item.occurredAtText}}</text>
+            </view>
+            <view class="record-tail">
+              <text class="record-amount record-amount--{{item.direction}}">{{item.amountPrefix}} ¥{{item.amountText}}</text>
+              <view class="record-actions">
+                <button
+                  class="edit-record-button"
+                  data-id="{{item.id}}"
+                  bindtap="openEditTransaction"
+                  aria-label="修改{{item.categoryLabel}}{{item.purposeText}}这笔{{item.directionLabel}}"
+                >修改</button>
+                <button
+                  class="delete-button"
+                  data-id="{{item.id}}"
+                  bindtap="handleDeleteTransaction"
+                  aria-label="删除{{item.categoryLabel}}{{item.purposeText}}这笔{{item.directionLabel}}"
+                >删除</button>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="bill-import">
+          <view class="bill-import__copy">
+            <text class="bill-import__eyebrow">本地账单导入</text>
+            <text class="bill-import__title">导入微信或支付宝账单</text>
+            <text class="bill-import__helper">同一个入口自动识别平台：微信先解压邮件账单，再选择其中 .xlsx/.csv；支付宝直接选择导出的 .csv。文件需先发送到任意微信会话。</text>
+          </view>
+          <button
+            class="bill-import__choose"
+            bindtap="chooseBillFile"
+            disabled="{{billImportLoading || isBillImportSaving}}"
+            loading="{{billImportLoading}}"
+          >{{billImportLoading ? '正在读取…' : (billImportPreview ? '重新选择账单' : '从微信会话选择文件')}}</button>
+          <text class="field-error bill-import__error" aria-role="alert" wx:if="{{billImportError}}">{{billImportError}}</text>
+
+          <view class="bill-import__preview" wx:if="{{billImportPreview}}" aria-role="status">
+            <view class="bill-import__file-row">
+              <text class="bill-import__file">{{billImportPreview.sourceLabel}} · {{billImportPreview.fileName}}</text>
+              <text class="bill-import__range">{{billImportPreview.dateFrom}} — {{billImportPreview.dateTo}}</text>
+            </view>
+            <view class="bill-import__metrics">
+              <view class="bill-import__metric">
+                <text class="bill-import__metric-value">{{billImportPreview.importCount}}</text>
+                <text class="bill-import__metric-label">将新增</text>
+              </view>
+              <view class="bill-import__metric">
+                <text class="bill-import__metric-value">{{billImportPreview.existingDuplicateCount + billImportPreview.duplicateInFileCount}}</text>
+                <text class="bill-import__metric-label">重复跳过</text>
+              </view>
+              <view class="bill-import__metric">
+                <text class="bill-import__metric-value">¥{{billImportPreview.expenseTotalText}}</text>
+                <text class="bill-import__metric-label">新增支出</text>
+              </view>
+              <view class="bill-import__metric">
+                <text class="bill-import__metric-value">¥{{billImportPreview.incomeTotalText}}</text>
+                <text class="bill-import__metric-label">新增收入/退款</text>
+              </view>
+            </view>
+            <text class="bill-import__rule">{{billImportPreview.ruleSummary}}</text>
+            <text class="bill-import__skipped">{{billImportPreview.skippedSummary}}</text>
+            <button
+              class="bill-import__confirm"
+              bindtap="confirmBillImport"
+              disabled="{{isBillImportSaving || billImportPreview.importCount === 0}}"
+              loading="{{isBillImportSaving}}"
+            >{{isBillImportSaving ? '正在导入…' : '确认导入 ' + billImportPreview.importCount + ' 笔'}}</button>
+          </view>
+          <text class="bill-import__privacy">不会上传账单，不保存微信或支付宝交易单号原文；导入后仍可按日期查看、修改或删除。</text>
+          <view class="import-batches" wx:if="{{importBatches.length}}">
+            <text class="import-batches__title">最近可撤销的导入</text>
+            <view class="import-batch" wx:for="{{importBatches}}" wx:key="id">
+              <view class="import-batch__copy">
+                <text class="import-batch__name">{{item.sourceLabel}} · {{item.count}}笔</text>
+                <text class="import-batch__meta">{{item.dateFrom}} 至 {{item.dateTo}} · {{item.importedAtText}}</text>
+              </view>
+              <button
+                class="import-batch__undo"
+                data-id="{{item.id}}"
+                bindtap="handleUndoImportBatch"
+                disabled="{{isImportBatchUndoing}}"
+              >撤销</button>
+            </view>
+          </view>
+        </view>
+        <view class="ledger-export">
+          <view class="ledger-export__copy">
+            <text class="ledger-export__title">导出全部本地流水</text>
+            <text class="ledger-export__helper">Excel 包含日期、时间、收支、分类、用途/来源和金额。打开后可点右上角操作；PC 端可保存到磁盘。</text>
+          </view>
+          <view class="ledger-export__actions">
+            <button
+              class="ledger-export__button ledger-export__button--primary"
+              bindtap="handleExportLedger"
+              disabled="{{isExporting}}"
+              loading="{{isExporting}}"
+            >{{isExporting ? '正在生成…' : '导出并打开 Excel'}}</button>
+            <button
+              wx:if="{{exportFilePath}}"
+              class="ledger-export__button"
+              bindtap="shareExportedLedger"
+            >直接转发文件</button>
+            <button
+              wx:if="{{exportFilePath && canSaveToDisk}}"
+              class="ledger-export__button"
+              bindtap="saveExportedLedgerToDisk"
+            >保存到电脑</button>
+          </view>
+          <text class="field-error ledger-export__error" aria-role="alert" wx:if="{{exportError}}">{{exportError}}</text>
+          <text class="ledger-export__privacy">只在本机生成，不含启用前汇总、OPENID 或身份信息。</text>
+        </view>
+        <view class="ledger-export data-backup">
+          <view class="ledger-export__copy">
+            <text class="ledger-export__title">完整数据备份与恢复</text>
+            <text class="ledger-export__helper">JSON 备份可恢复预算、当前与历史流水、导入批次和主题。Excel 仅用于查看，不能恢复。</text>
+          </view>
+          <view class="ledger-export__actions">
+            <button
+              class="ledger-export__button ledger-export__button--primary"
+              bindtap="handleCreateBackup"
+              disabled="{{isBackingUp || isRestoringBackup}}"
+              loading="{{isBackingUp}}"
+            >{{isBackingUp ? '正在备份…' : '生成完整备份'}}</button>
+            <button
+              wx:if="{{backupFilePath}}"
+              class="ledger-export__button"
+              bindtap="shareBackupFile"
+            >转发备份文件</button>
+            <button
+              wx:if="{{backupFilePath && canSaveToDisk}}"
+              class="ledger-export__button"
+              bindtap="saveBackupToDisk"
+            >保存备份到电脑</button>
+            <button
+              class="ledger-export__button"
+              bindtap="chooseBackupFile"
+              disabled="{{isRestoringBackup || isBackingUp || isBackupPreviewLoading}}"
+              loading="{{isBackupPreviewLoading}}"
+            >{{isBackupPreviewLoading ? '正在读取备份…' : '选择备份文件恢复'}}</button>
+          </view>
+          <view class="backup-preview" wx:if="{{backupPreview}}">
+            <text class="backup-preview__title">已验证：{{backupPreview.fileName}}</text>
+            <text class="backup-preview__meta">{{backupPreview.exportedAtText}} · {{backupPreview.monthFrom}} 至 {{backupPreview.monthTo}} · {{backupPreview.recordCount}}笔</text>
+            <button
+              class="backup-preview__restore"
+              bindtap="confirmRestoreBackup"
+              disabled="{{isRestoringBackup}}"
+              loading="{{isRestoringBackup}}"
+            >{{isRestoringBackup ? '正在恢复…' : '确认覆盖并恢复'}}</button>
+          </view>
+          <text class="field-error ledger-export__error" aria-role="alert" wx:if="{{backupError}}">{{backupError}}</text>
+          <text class="ledger-export__privacy">备份包含全部流水，只在本机生成、不上传；请只保存或转发给自己。恢复前会完整校验并二次确认。</text>
+        </view>
+        <text class="receipt-privacy">仅保存在本机 · 当前月纠错会重算额度</text>
+      </view>
+    </view>
+
+    <view class="share-footer">
+      <view class="share-card__copy">
+        <text class="share-card__title">分享今日结果</text>
+        <text class="share-card__eyebrow">只分享结果，不分享消费明细</text>
+      </view>
+      <view class="share-actions">
+        <button class="share-button share-button--friend" open-type="share">分享给好友</button>
+        <button class="share-button" bindtap="handleTimelineGuide">朋友圈 · 右上角</button>
+      </view>
+    </view>
+  </block>
+
+  <view class="legal-note">本结果仅用于日常预算参考，不构成理财建议。</view>
+</view>
+
+<view class="drawer-layer edit-layer" style="{{themeStyle}}" wx:if="{{editDrawerVisible}}" catchtouchmove="noop">
+  <view class="drawer-mask" bindtap="closeEditDrawer"></view>
+  <view class="edit-drawer">
+    <view class="drawer-handle"></view>
+    <view class="drawer-header">
+      <view>
+        <text class="drawer-eyebrow">纠正这笔本地记录</text>
+        <text class="drawer-title">修改收支明细</text>
+      </view>
+      <button class="drawer-close" bindtap="closeEditDrawer" aria-label="关闭交易修改">关闭</button>
+    </view>
+
+    <scroll-view class="edit-scroll" scroll-y="true">
+      <view class="direction-switch direction-switch--edit" role="tablist" aria-label="修改记录类型">
+        <button
+          class="direction-switch__button {{editForm.direction === 'expense' ? 'direction-switch__button--active' : ''}}"
+          data-direction="expense"
+          bindtap="handleEditDirection"
+          disabled="{{isEditSaving}}"
+          aria-label="修改为支出"
+        >支出</button>
+        <button
+          class="direction-switch__button {{editForm.direction === 'income' ? 'direction-switch__button--active' : ''}}"
+          data-direction="income"
+          bindtap="handleEditDirection"
+          disabled="{{isEditSaving}}"
+          aria-label="修改为收入"
+        >收入</button>
+      </view>
+      <text class="field-label">{{editForm.direction === 'income' ? '收入分类' : '支出分类'}}</text>
+      <view class="category-grid edit-category-grid" role="list">
+        <button
+          wx:for="{{editCategories}}"
+          wx:key="id"
+          class="category-chip {{editForm.categoryId === item.id ? 'category-chip--selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="handleEditCategorySelect"
+          aria-label="修改为{{item.label}}分类"
+        >{{item.label}}</button>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">{{editForm.direction === 'income' ? '来源' : '用途'}}（可选）</text>
+        <view class="form-input">
+          <input
+            type="text"
+            value="{{editForm.note}}"
+            data-field="note"
+            maxlength="20"
+            bindinput="handleEditFormInput"
+            placeholder="{{editForm.direction === 'income' ? '例如：周末兼职、项目奖金' : '例如：咖啡、午餐、地铁'}}"
+            aria-label="修改{{editForm.direction === 'income' ? '收入来源' : '消费用途'}}"
+          />
+        </view>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">金额</text>
+        <view class="form-input {{editError ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input
+            type="digit"
+            value="{{editForm.amount}}"
+            data-field="amount"
+            bindinput="handleEditFormInput"
+            aria-label="修改{{editForm.direction === 'income' ? '收入' : '支出'}}金额"
+          />
+        </view>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">发生日期</text>
+        <picker
+          mode="date"
+          value="{{editForm.dateKey}}"
+          start="{{editForm.minDateKey}}"
+          end="{{editForm.maxDateKey}}"
+          bindchange="handleEditDateChange"
+          aria-label="修改发生日期"
+        >
+          <view class="edit-date-field">{{editForm.dateKey}}</view>
+        </picker>
+        <text class="field-helper">为避免打乱月份预算，日期只能在原月份内调整。</text>
+      </view>
+
+      <text class="field-error edit-error" aria-role="alert" wx:if="{{editError}}">{{editError}}</text>
+      <button
+        class="primary-button"
+        bindtap="saveEditedTransaction"
+        disabled="{{isEditSaving}}"
+        loading="{{isEditSaving}}"
+      >{{isEditSaving ? '保存中…' : '保存修改'}}</button>
+    </scroll-view>
+  </view>
+</view>
+
+<view class="drawer-layer" style="{{themeStyle}}" wx:if="{{drawerVisible}}" catchtouchmove="noop">
+  <view class="drawer-mask" bindtap="closeDrawer"></view>
+  <view class="settings-drawer">
+    <view class="drawer-handle"></view>
+    <view class="drawer-header">
+      <view>
+        <text class="drawer-eyebrow">{{drawerMode === 'first' ? '先把预算周期的边界说清楚' : '调整后立即重新计算'}}</text>
+        <text class="drawer-title">{{drawerMode === 'first' ? '设置预算周期' : '修改预算设置'}}</text>
+      </view>
+      <button
+        wx:if="{{drawerMode === 'edit'}}"
+        class="drawer-close"
+        bindtap="closeDrawer"
+        aria-label="关闭设置"
+      >关闭</button>
+    </view>
+
+    <scroll-view class="drawer-scroll" scroll-y="true">
+      <view class="form-field">
+        <text class="field-label">预算周期从几号开始</text>
+        <picker
+          mode="selector"
+          range="{{cycleStartDays}}"
+          range-key="label"
+          value="{{cycleStartDayIndex}}"
+          bindchange="handleCycleStartDayChange"
+          aria-label="选择每月预算周期起始日"
+        >
+          <view class="selector-field">{{cycleStartDays[cycleStartDayIndex].label}} · 更换</view>
+        </picker>
+        <text class="field-helper">建议选择工资或父母发放生活费到账的日期。例如 15 日表示每月 15 日至下月 14 日；月报仍按自然月。</text>
+      </view>
+
+      <view class="form-field">
+        <view class="budget-field-heading">
+          <text class="budget-field-heading__title">固定收入</text>
+        </view>
+        <view class="form-input {{formErrors.income ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.income}}" data-field="income" bindinput="handleFormInput" placeholder="例如 8000" aria-label="预算周期固定收入" />
+        </view>
+        <text class="field-helper">工资、父母生活费等每个周期稳定到账的钱；外快和奖金请在首页单独记录。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.income}}">{{formErrors.income}}</text>
+      </view>
+
+      <view class="form-field">
+        <view class="budget-field-heading">
+          <text class="budget-field-heading__title">固定支出</text>
+        </view>
+        <view class="fixed-expense-mode" aria-label="选择固定支出计算方式">
+          <button
+            class="fixed-expense-mode__option {{form.fixedExpenseMode === 'manual' ? 'fixed-expense-mode__option--active' : ''}}"
+            data-mode="manual"
+            bindtap="handleFixedExpenseModeChange"
+            aria-label="直接填写固定支出"
+          >
+            <text>直接填写</text>
+            <text class="fixed-expense-mode__current" wx:if="{{form.fixedExpenseMode === 'manual'}}">当前</text>
+          </button>
+          <button
+            class="fixed-expense-mode__option {{form.fixedExpenseMode === 'items' ? 'fixed-expense-mode__option--active' : ''}}"
+            data-mode="items"
+            bindtap="handleFixedExpenseModeChange"
+            aria-label="按明细合计固定支出"
+          >
+            <text>明细合计</text>
+            <text class="fixed-expense-mode__current" wx:if="{{form.fixedExpenseMode === 'items'}}">当前</text>
+          </button>
+        </view>
+        <view class="form-input fixed-expense-manual-input {{formErrors.fixedExpense ? 'form-input--error' : ''}}" wx:if="{{form.fixedExpenseMode === 'manual'}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.fixedExpense}}" data-field="fixedExpense" bindinput="handleFormInput" placeholder="房租、还款、会员等" aria-label="预算周期固定支出" />
+        </view>
+        <view class="fixed-expense-calculated {{formErrors.fixedExpense ? 'fixed-expense-calculated--error' : ''}}" wx:else aria-label="明细自动合计固定支出">
+          <view>
+            <text class="fixed-expense-calculated__label">明细自动合计</text>
+            <text class="fixed-expense-calculated__helper">随下方明细实时更新</text>
+          </view>
+          <text class="fixed-expense-calculated__amount">¥{{fixedExpenseItemTotalText}}</text>
+        </view>
+        <text class="field-helper" wx:if="{{form.fixedExpenseMode === 'manual'}}">知道总额时，只需填写一个固定支出总额。</text>
+        <text class="field-helper" wx:else>不知道总额时填写下方明细，系统会替你自动累加。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.fixedExpense}}">{{formErrors.fixedExpense}}</text>
+      </view>
+
+      <view class="budget-detail-section" wx:if="{{form.fixedExpenseMode === 'items'}}">
+        <view class="budget-detail-section__heading">
+          <view>
+            <text class="budget-detail-section__title">固定支出明细</text>
+            <text class="field-helper">每项有效金额都会自动计入上方固定支出，不会生成流水。</text>
+          </view>
+        </view>
+        <button class="fixed-expense-add" bindtap="addFixedExpenseItem" aria-label="新增一项固定支出明细">
+          <text>新增固定支出</text>
+          <text class="fixed-expense-add__mark">＋</text>
+        </button>
+        <view class="fixed-expense-row" wx:for="{{form.fixedExpenseItems}}" wx:key="id" wx:for-index="index">
+          <input
+            class="fixed-expense-row__name"
+            type="text"
+            maxlength="12"
+            value="{{item.name}}"
+            data-index="{{index}}"
+            data-field="name"
+            bindinput="handleFixedExpenseItemInput"
+            placeholder="例如：房租"
+            aria-label="固定支出名称"
+          />
+          <view class="fixed-expense-row__amount">
+            <text>¥</text>
+            <input
+              type="digit"
+              value="{{item.amount}}"
+              data-index="{{index}}"
+              data-field="amount"
+              bindinput="handleFixedExpenseItemInput"
+              placeholder="0.00"
+              aria-label="固定支出金额"
+            />
+          </view>
+          <button class="fixed-expense-row__delete" data-index="{{index}}" bindtap="removeFixedExpenseItem" aria-label="移除这项固定支出明细">移除</button>
+        </view>
+      </view>
+
+      <view class="form-field">
+        <text class="field-label">每个预算周期想存下的钱</text>
+        <view class="form-input {{formErrors.savingGoal ? 'form-input--error' : ''}}">
+          <text>¥</text>
+          <input type="digit" value="{{form.savingGoal}}" data-field="savingGoal" bindinput="handleFormInput" placeholder="例如 1000" aria-label="预算周期想存下的钱" />
+        </view>
+        <text class="field-helper">与固定支出合计不能超过固定收入和额外收入。</text>
+        <text class="field-error" aria-role="alert" wx:if="{{formErrors.savingGoal}}">{{formErrors.savingGoal}}</text>
+      </view>
+
+      <view class="budget-import-note">
+        <text class="budget-import-note__title">本周期已有消费怎么补齐？</text>
+        <text class="budget-import-note__copy">请在首页补记，或到“记录与历史”导入微信/支付宝账单；系统会按日期自动计入，无需在设置里重复填写。</text>
+        <text class="budget-import-note__legacy" wx:if="{{legacyHistoricalSpentText}}">检测到旧版启用前汇总 ¥{{legacyHistoricalSpentText}}；保存设置后将清零，请先补记或导入对应流水。</text>
+      </view>
+
+      <view class="local-only-note">
+        <view class="local-only-note__dot"></view>
+        <text>数据只保存在当前设备中，不会上传。</text>
+      </view>
+
+      <button class="theme-entry" bindtap="openThemeDrawer" aria-label="打开页面主题设置">
+        <view class="theme-entry__copy">
+          <text class="theme-entry__title">页面主题</text>
+          <text class="theme-entry__subtitle">当前：{{themeName}}</text>
+        </view>
+        <text class="theme-entry__action">选择主题</text>
+      </button>
+
+      <button
+        class="primary-button drawer-save"
+        bindtap="saveBudgetForm"
+        disabled="{{isBudgetSaving}}"
+        loading="{{isBudgetSaving}}"
+      >{{isBudgetSaving ? '保存中…' : '保存并查看结果'}}</button>
+
+      <button
+        wx:if="{{drawerMode === 'edit' && budget.cycleStartDay === 1}}"
+        class="reset-button"
+        bindtap="resetCurrentMonth"
+      >重置本月数据</button>
+    </scroll-view>
+  </view>
+</view>
+
+<view class="drawer-layer theme-layer" style="{{themeStyle}}" wx:if="{{themeDrawerVisible}}" catchtouchmove="noop">
+  <view class="drawer-mask" bindtap="closeThemeDrawer"></view>
+  <view class="theme-drawer">
+    <view class="drawer-handle"></view>
+    <text class="theme-drawer__title">选择你的页面气质</text>
+    <text class="theme-drawer__subtitle">先选一套主题，再微调主色与背景温度</text>
+
+    <scroll-view class="theme-scroll" scroll-y="true">
+      <view class="theme-preset-grid" role="list">
+        <button
+          wx:for="{{themePresets}}"
+          wx:key="id"
+          class="theme-preset {{item.selected ? 'theme-preset--selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="handleThemePreset"
+          aria-label="选择{{item.name}}主题"
+        >
+          <view class="theme-swatches">
+            <view
+              wx:for="{{item.colors}}"
+              wx:for-item="color"
+              wx:key="*this"
+              class="theme-swatch"
+              style="background: {{color}};"
+            ></view>
+          </view>
+          <text>{{item.name}}{{item.selected ? ' ✓' : ''}}</text>
+        </button>
+      </view>
+
+      <view class="theme-advanced">
+        <text class="theme-advanced__title">高级微调</text>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>主色调</text>
+            <text>{{themeDraft.hueShift}}</text>
+          </view>
+          <slider
+            min="-30"
+            max="30"
+            step="1"
+            value="{{themeDraft.hueShift}}"
+            data-field="hueShift"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="{{themeResolved.primary}}"
+            block-color="{{themeResolved.primary}}"
+            aria-label="调整主色调"
+          />
+        </view>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>背景温度</text>
+            <text>{{themeDraft.warmth}}</text>
+          </view>
+          <slider
+            min="-10"
+            max="10"
+            step="1"
+            value="{{themeDraft.warmth}}"
+            data-field="warmth"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="#F4B942"
+            block-color="#F4B942"
+            aria-label="调整背景温度"
+          />
+        </view>
+        <view class="theme-control">
+          <view class="theme-control__heading">
+            <text>页面亮度</text>
+            <text>{{themeDraft.brightness}}</text>
+          </view>
+          <slider
+            min="-10"
+            max="10"
+            step="1"
+            value="{{themeDraft.brightness}}"
+            data-field="brightness"
+            bindchanging="handleThemeSlider"
+            bindchange="handleThemeSlider"
+            activeColor="{{themeResolved.primary}}"
+            block-color="{{themeResolved.primary}}"
+            aria-label="调整页面亮度"
+          />
+        </view>
+      </view>
+
+      <view class="theme-safety-note">
+        <text>警示黄与超支红保持固定，确保任何主题都能看懂。</text>
+      </view>
+
+      <view class="theme-actions">
+        <button class="theme-action theme-action--secondary" bindtap="resetThemeDraft">恢复默认</button>
+        <button class="theme-action theme-action--primary" bindtap="saveThemeSettings">应用主题</button>
+      </view>
+    </scroll-view>
+  </view>
+</view>

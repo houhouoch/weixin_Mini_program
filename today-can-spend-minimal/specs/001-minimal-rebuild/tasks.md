@@ -11,3 +11,4 @@
 - [x] T009 完成 Node、语法、结构和包体检查
 - [x] T010 完成官方 CLI、Automator、Console、截图和 preview 验证
 - [x] T011 更新验收矩阵并完成 Git 提交和推送尝试
+- [x] T012 兼容无可选 assets 目录的干净仓库结构检查

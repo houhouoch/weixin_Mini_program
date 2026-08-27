@@ -14,6 +14,7 @@ function source(file) {
 }
 
 function totalBytes(target) {
+  if (!fs.existsSync(target)) return 0;
   const stat = fs.statSync(target);
   if (stat.isFile()) return stat.size;
   return fs.readdirSync(target)

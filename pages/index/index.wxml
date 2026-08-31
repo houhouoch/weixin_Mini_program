@@ -23,6 +23,14 @@
         <text class="minimal-balance__helper">{{result.heroStatusLine1}} · {{result.heroStatusLine2}}</text>
       </view>
 
+      <view class="minimal-saving">
+        <view class="minimal-saving__copy">
+          <text class="minimal-saving__label">{{result.periodSavingLabel}}</text>
+          <text class="minimal-saving__note">已扣除储蓄目标 ¥{{budgetSavingGoalText}}</text>
+        </view>
+        <text class="minimal-saving__amount {{result.periodSavingNegative ? 'minimal-saving__amount--negative' : ''}}">{{result.periodSavingNegative ? '−' : ''}}¥{{result.periodSavingAmountText}}</text>
+      </view>
+
       <view class="minimal-entry-wrap">
         <view class="minimal-entry">
           <view class="minimal-entry__copy">
@@ -39,7 +47,7 @@
             />
             <text class="minimal-entry__hint" data-direction="income">这笔花在哪儿？也可记下收入</text>
           </view>
-          <button class="minimal-entry__voice" bindtap="handleVoiceEntry" aria-label="尝试语音输入">
+          <button class="minimal-entry__voice {{isVoiceRecording ? 'minimal-entry__voice--active' : ''}}" bindtap="handleVoiceEntry" aria-label="{{isVoiceRecording ? '结束语音输入' : '开始语音输入'}}">
             <image class="minimal-entry__voice-icon" src="/assets/icons/microphone.svg" mode="aspectFit" />
           </button>
         </view>

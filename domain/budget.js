@@ -129,11 +129,10 @@ function deriveBudget(budget, transactions, value) {
   const spentBeforeTodayCents = budget.historicalSpentBeforeTrackingCents
     + recordedSpentBeforeTodayCents;
   const remainingDays = cycle.daysRemainingIncludingToday;
-  const distributableCents = Math.max(
-    monthlyFlexibleBudgetCents - spentBeforeTodayCents,
-    0
+  const cycleTotalDays = cycle.totalDays;
+  const todaySuggestedBudgetCents = Math.floor(
+    Math.max(monthlyFlexibleBudgetCents, 0) / cycleTotalDays
   );
-  const todaySuggestedBudgetCents = Math.floor(distributableCents / remainingDays);
   const todayRemainingCents = Math.max(
     todaySuggestedBudgetCents - todaySpentCents,
     0
@@ -181,6 +180,7 @@ function deriveBudget(budget, transactions, value) {
     cycleEndDateKey: cycle.endDateKey,
     cycleLabel: (budget.cycleStartDay || 1) === 1 ? '本月' : '本周期',
     cycleStartDateKey: cycle.startDateKey,
+    cycleTotalDays,
     daysRemainingIncludingToday: remainingDays,
     monthlyFlexibleBudgetCents,
     monthlyRemainingCents,

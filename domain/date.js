@@ -57,6 +57,7 @@ function budgetCycleRange(cycleStartDay, value) {
     end,
     startDateKey: toDateKey(start),
     endDateKey: toDateKey(end),
+    totalDays: calendarDayDistance(start, end) + 1,
     daysRemainingIncludingToday: Math.max(calendarDayDistance(now, end) + 1, 1)
   };
 }

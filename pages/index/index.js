@@ -63,6 +63,15 @@ const FIELD_CONFIG = {
 };
 
 const FIXED_EXPENSE_MODES = Object.freeze(['manual', 'items']);
+const VOICE_RECORDING_DURATION_MS = 30000;
+
+function voiceErrorMessage(error) {
+  const code = error && (error.retcode || error.errCode);
+  if (code === -30011 || code === 10001) {
+    return '请允许使用麦克风，或直接输入“咖啡 20”。';
+  }
+  return '语音暂时没连上，也可以直接输入“咖啡 20”。';
+}
 
 function commandId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -305,6 +314,7 @@ Page({
     isExporting: false,
     isSaving: false,
     isTemplateSaving: false,
+    isVoiceRecording: false,
     legacyHistoricalSpentText: '',
     quickTemplates: [],
     recentTransactions: [],
@@ -339,6 +349,7 @@ Page({
       { id: 'lunch', label: '午餐 32' }
     ],
     voiceHint: '',
+    voiceAvailable: false,
     sections: {
       composer: false,
       history: false,
@@ -378,8 +389,99 @@ Page({
     wx.showShareMenu({
       menus: ['shareAppMessage', 'shareTimeline']
     });
+    this.setupVoiceRecognition();
     trackEvent('app_open', { entry: fromShare ? 'share' : 'direct' });
     if (fromShare) trackEvent('share_entry_open', { entry: 'share' });
+  },
+
+  onHide() {
+    this.stopVoiceRecognition();
+  },
+
+  onUnload() {
+    this.stopVoiceRecognition();
+    if (!this._voiceManager) return;
+    this._voiceManager.onStart = null;
+    this._voiceManager.onRecognize = null;
+    this._voiceManager.onStop = null;
+    this._voiceManager.onError = null;
+    this._voiceManager = null;
+  },
+
+  setupVoiceRecognition() {
+    try {
+      if (typeof requirePlugin !== 'function') throw new Error('plugin api unavailable');
+      const plugin = requirePlugin('WechatSI');
+      const manager = plugin && plugin.getRecordRecognitionManager
+        ? plugin.getRecordRecognitionManager()
+        : null;
+      if (!manager) throw new Error('recognition manager unavailable');
+      this._voiceManager = manager;
+      manager.onStart = () => {
+        this._voiceStarting = false;
+        this.setData({
+          isVoiceRecording: true,
+          smartEntryError: '',
+          smartEntryParsed: null,
+          voiceHint: '正在听…说完后再点一次麦克风。'
+        });
+        trackEvent('voice_entry_started');
+      };
+      manager.onRecognize = (result) => {
+        const text = String(result && result.result || '').trim();
+        if (!text) return;
+        this.setData({
+          smartEntryError: '',
+          smartEntryInput: text,
+          smartEntryParsed: null
+        });
+      };
+      manager.onStop = (result) => {
+        this._voiceStarting = false;
+        const text = String(result && result.result || '').trim();
+        if (!text) {
+          this.setData({
+            isVoiceRecording: false,
+            voiceHint: '没有听清，请重试或直接输入“咖啡 20”。'
+          });
+          trackEvent('voice_entry_empty', { fallback: 'text' });
+          return;
+        }
+        this.setData({
+          isVoiceRecording: false,
+          smartEntryError: '',
+          smartEntryInput: text,
+          smartEntryParsed: null,
+          voiceHint: `已识别“${text}”，请确认账单。`
+        }, () => this.handleSmartSubmit({ keepVoiceHint: true }));
+        trackEvent('voice_entry_recognized');
+      };
+      manager.onError = (error) => {
+        this._voiceStarting = false;
+        this.setData({
+          isVoiceRecording: false,
+          voiceHint: voiceErrorMessage(error)
+        });
+        trackEvent('voice_entry_error', {
+          code: String(error && (error.retcode || error.errCode) || 'unknown'),
+          fallback: 'text'
+        });
+      };
+      this.setData({ voiceAvailable: true, voiceHint: '' });
+    } catch (error) {
+      this._voiceSetupError = error;
+      this.setData({ voiceAvailable: false });
+    }
+  },
+
+  stopVoiceRecognition() {
+    if (!this._voiceManager || !this.data.isVoiceRecording) return;
+    try {
+      this._voiceManager.stop();
+    } catch (error) {
+      this._voiceStarting = false;
+      this.setData({ isVoiceRecording: false });
+    }
   },
 
   onShow() {
@@ -499,6 +601,11 @@ Page({
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
         monthlyRemainingText: formatCents(result.monthlyRemainingCents),
         monthlyOverspentText: formatCents(Math.abs(result.monthlyRemainingCents)),
+        periodSavingAmountText: formatCents(Math.abs(result.monthlyRemainingCents)),
+        periodSavingLabel: result.monthlyRemainingCents < 0
+          ? `${result.cycleLabel}还差`
+          : `${result.cycleLabel}省下`,
+        periodSavingNegative: result.monthlyRemainingCents < 0,
         periodLabel: result.cycleLabel,
         cycleRangeText: cycleRangeText(result.cycleStartDateKey, result.cycleEndDateKey),
         recordedIncomeText: formatCents(result.recordedIncomeCents),
@@ -824,7 +931,7 @@ Page({
     });
   },
 
-  handleSmartSubmit() {
+  handleSmartSubmit(options) {
     const parsed = parseQuickEntry(this.data.smartEntryInput);
     if (!parsed.ok) {
       this.setData({ smartEntryError: parsed.error, smartEntryParsed: null });
@@ -833,7 +940,7 @@ Page({
     this.setData({
       smartEntryError: '',
       smartEntryParsed: parsed.value,
-      voiceHint: ''
+      voiceHint: options && options.keepVoiceHint ? this.data.voiceHint : ''
     });
     wx.hideKeyboard();
   },
@@ -848,10 +955,40 @@ Page({
   },
 
   handleVoiceEntry() {
-    const voiceHint = '语音识别服务暂未配置，请直接输入，例如“咖啡 20”。';
-    this.setData({ voiceHint });
-    wx.showToast({ icon: 'none', title: '请直接输入账单' });
-    trackEvent('voice_entry_unavailable', { fallback: 'text' });
+    if (!this._voiceManager) this.setupVoiceRecognition();
+    if (!this._voiceManager) {
+      const voiceHint = '语音服务暂不可用，也可以直接输入“咖啡 20”。';
+      this.setData({ voiceHint });
+      wx.showToast({ icon: 'none', title: '可直接输入账单' });
+      trackEvent('voice_entry_unavailable', { fallback: 'text' });
+      return;
+    }
+    if (this.data.isVoiceRecording) {
+      this.setData({ voiceHint: '正在识别…' });
+      this._voiceManager.stop();
+      return;
+    }
+    if (this._voiceStarting) return;
+    this._voiceStarting = true;
+    this.setData({
+      isVoiceRecording: true,
+      smartEntryError: '',
+      smartEntryParsed: null,
+      voiceHint: '正在启动麦克风…'
+    });
+    try {
+      this._voiceManager.start({
+        duration: VOICE_RECORDING_DURATION_MS,
+        lang: 'zh_CN'
+      });
+    } catch (error) {
+      this._voiceStarting = false;
+      this.setData({
+        isVoiceRecording: false,
+        voiceHint: voiceErrorMessage(error)
+      });
+      trackEvent('voice_entry_error', { code: 'start_failed', fallback: 'text' });
+    }
   },
 
   async confirmSmartEntry() {

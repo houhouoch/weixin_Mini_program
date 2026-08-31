@@ -9,6 +9,17 @@
     "backgroundColor": "#F5F5F7",
     "backgroundTextStyle": "dark"
   },
+  "plugins": {
+    "WechatSI": {
+      "version": "0.3.3",
+      "provider": "wx069ba97219f66d99"
+    }
+  },
+  "permission": {
+    "scope.record": {
+      "desc": "用于将你主动录制的账单语音转换为文字"
+    }
+  },
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
 }

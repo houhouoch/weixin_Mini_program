@@ -286,9 +286,10 @@ test('wechat XLSX converts the numeric Excel date format used by official person
 test('acceptance A01 normal calculation', () => {
   const result = deriveBudget(budget(), [], new Date(2026, 3, 20, 12));
   assert.equal(result.daysRemainingIncludingToday, 11);
+  assert.equal(result.cycleTotalDays, 30);
   assert.equal(result.monthlyFlexibleBudgetCents, 300000);
-  assert.equal(result.todaySuggestedBudgetCents, 13636);
-  assert.equal(result.todayRemainingCents, 13636);
+  assert.equal(result.todaySuggestedBudgetCents, 10000);
+  assert.equal(result.todayRemainingCents, 10000);
   assert.equal(result.monthlyRemainingCents, 150000);
 });
 
@@ -297,7 +298,7 @@ test('acceptance A02 and A03 additions update the result', () => {
   const first = { id: 'a', amountCents: 3636, occurredAt: now.getTime() };
   const a02 = deriveBudget(budget(), [first], now);
   assert.equal(a02.todaySpentCents, 3636);
-  assert.equal(a02.todayRemainingCents, 10000);
+  assert.equal(a02.todayRemainingCents, 6364);
   assert.equal(a02.monthlyRemainingCents, 146364);
 
   const second = { id: 'b', amountCents: 12000, occurredAt: now.getTime() + 1 };
@@ -305,7 +306,23 @@ test('acceptance A02 and A03 additions update the result', () => {
   assert.equal(a03.todaySpentCents, 15636);
   assert.equal(a03.todayRemainingCents, 0);
   assert.equal(a03.status, 'todayOverspent');
-  assert.equal(a03.statusAmountCents, 2000);
+  assert.equal(a03.statusAmountCents, 5636);
+});
+
+test('daily suggestion stays stable on month end and saved amount excludes saving goal', () => {
+  const now = new Date(2026, 7, 31, 12);
+  const result = deriveBudget(budget({
+    incomeCents: 1500000,
+    fixedExpenseCents: 300000,
+    savingGoalCents: 200000,
+    historicalSpentBeforeTrackingCents: 500
+  }), [], now);
+
+  assert.equal(result.cycleTotalDays, 31);
+  assert.equal(result.daysRemainingIncludingToday, 1);
+  assert.equal(result.monthlyFlexibleBudgetCents, 1000000);
+  assert.equal(result.todaySuggestedBudgetCents, 32258);
+  assert.equal(result.monthlyRemainingCents, 999500);
 });
 
 test('extra income increases the available budget without becoming spending', () => {
@@ -375,6 +392,7 @@ test('date rules handle leap years, month end and usage days', () => {
   const beforePayday = budgetCycleRange(15, new Date(2026, 7, 10, 12));
   assert.equal(beforePayday.startDateKey, '2026-07-15');
   assert.equal(beforePayday.endDateKey, '2026-08-14');
+  assert.equal(beforePayday.totalDays, 31);
   assert.equal(beforePayday.daysRemainingIncludingToday, 5);
   const afterPayday = budgetCycleRange(15, new Date(2026, 7, 20, 12));
   assert.equal(afterPayday.startDateKey, '2026-08-15');

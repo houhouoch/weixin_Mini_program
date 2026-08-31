@@ -73,6 +73,18 @@ check(
 const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
 check(Array.isArray(appConfig.pages) && appConfig.pages.length === 1, '仅注册一个页面');
 check(!Object.prototype.hasOwnProperty.call(appConfig, 'tabBar'), '未配置 tabBar');
+check(
+  appConfig.plugins
+    && appConfig.plugins.WechatSI
+    && appConfig.plugins.WechatSI.provider === 'wx069ba97219f66d99',
+  '接入微信官方语音识别插件'
+);
+check(
+  appConfig.permission
+    && appConfig.permission['scope.record']
+    && appConfig.permission['scope.record'].desc.includes('账单语音'),
+  '麦克风权限说明仅用于用户主动发起的账单语音识别'
+);
 
 const indexPageConfig = JSON.parse(
   fs.readFileSync(path.join(root, 'pages/index/index.json'), 'utf8')
@@ -97,6 +109,12 @@ check(!/wx\.(get|set|remove|clear)Storage/.test(pageJs), '页面层不直接访�
 check(!pageJs.includes('wx.getFileSystemManager'), '页面层不直接访问微信文件系统管理器');
 check(pageJs.includes('wx.getDeviceInfo()'), '页面优先使用新版设备信息接口');
 check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');
+check(
+  pageJs.includes("requirePlugin('WechatSI')")
+    && pageJs.includes('getRecordRecognitionManager')
+    && pageJs.includes('handleSmartSubmit({ keepVoiceHint: true })'),
+  '语音识别结果进入同一账单确认流程'
+);
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
 check(pageJs.includes('onShareTimeline'), '实现朋友圈分享生命周期');
 check(pageJs.includes("path: '/pages/index/index?from=share'"), '分享路径只包含来源标记');
@@ -143,6 +161,7 @@ check(wxml.includes('mode="date"'), '历史回顾使用原生日期选择器');
 check(wxml.includes('修改收支明细'), '页面提供交易修改抽屉');
 check(wxml.includes('data-direction="income"') && wxml.includes('记下收入'), '页面提供额外收入入口');
 check(wxml.includes('固定收入无需重复记录'), '收入入口提示避免重复记录固定收入');
+check(wxml.includes('已扣除储蓄目标 ¥{{budgetSavingGoalText}}'), '首页明确显示扣除储蓄目标后的周期省下金额');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');

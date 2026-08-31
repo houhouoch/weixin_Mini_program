@@ -1,19 +1,26 @@
-const THEME_SCHEMA_VERSION = 1;
+const THEME_SCHEMA_VERSION = 2;
 const DEFAULT_THEME_SETTINGS = Object.freeze({
-  presetId: 'forest',
+  presetId: 'graphite',
   hueShift: 0,
   warmth: 0,
   brightness: 0
 });
 
 const THEME_PRESETS = Object.freeze([
-  Object.freeze({ id: 'forest', name: '暖森林', page: '#F5EBD7', surface: '#FFF9EC', primary: '#123F35', accent: '#F4B942', text: '#123F35' }),
-  Object.freeze({ id: 'coast', name: '海岸蓝', page: '#EAF4F4', surface: '#F8FCFB', primary: '#155E75', accent: '#F2C14E', text: '#123B46' }),
-  Object.freeze({ id: 'coral', name: '日落珊瑚', page: '#FFF0E6', surface: '#FFF9F3', primary: '#9D3B32', accent: '#F9735B', text: '#54231F' }),
-  Object.freeze({ id: 'midnight', name: '午夜', page: '#16213E', surface: '#202D4D', primary: '#8BD3DD', accent: '#F2C14E', text: '#F4F7FB' }),
-  Object.freeze({ id: 'lime', name: '青柠', page: '#F2F7DA', surface: '#FBFDEB', primary: '#385B36', accent: '#B8D95B', text: '#243A23' }),
-  Object.freeze({ id: 'mono', name: '黑白', page: '#F4F2EE', surface: '#FFFFFF', primary: '#1A1A1A', accent: '#C8C3B8', text: '#1A1A1A' })
+  Object.freeze({ id: 'graphite', name: '石墨', page: '#F5F5F7', surface: '#FFFFFF', primary: '#1D1D1F', accent: '#E8E8ED', text: '#1D1D1F' }),
+  Object.freeze({ id: 'ocean', name: '海蓝', page: '#F3F7FA', surface: '#FFFFFF', primary: '#245B78', accent: '#DCEAF3', text: '#1D252A' }),
+  Object.freeze({ id: 'sage', name: '鼠尾草', page: '#F3F6F2', surface: '#FFFFFF', primary: '#486456', accent: '#DDE8DF', text: '#202622' }),
+  Object.freeze({ id: 'sand', name: '暖砂', page: '#F7F4EE', surface: '#FFFEFC', primary: '#6B5946', accent: '#E8DED0', text: '#29231E' })
 ]);
+
+const LEGACY_THEME_PRESET_MAP = Object.freeze({
+  forest: 'sage',
+  coast: 'ocean',
+  coral: 'sand',
+  midnight: 'graphite',
+  lime: 'sage',
+  mono: 'graphite'
+});
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -132,10 +139,20 @@ function isIntegerInRange(value, min, max) {
   return Number.isInteger(value) && value >= min && value <= max;
 }
 
+function isSupportedThemeSettings(settings) {
+  if (!settings || typeof settings.presetId !== 'string') return false;
+  const presetId = LEGACY_THEME_PRESET_MAP[settings.presetId] || settings.presetId;
+  return THEME_PRESETS.some((item) => item.id === presetId)
+    && isIntegerInRange(settings.hueShift, -30, 30)
+    && isIntegerInRange(settings.warmth, -10, 10)
+    && isIntegerInRange(settings.brightness, -10, 10);
+}
+
 function normalizeThemeSettings(settings) {
   const source = settings || {};
+  const presetId = LEGACY_THEME_PRESET_MAP[source.presetId] || source.presetId;
   return {
-    presetId: presetById(source.presetId).id,
+    presetId: presetById(presetId).id,
     hueShift: isIntegerInRange(source.hueShift, -30, 30) ? source.hueShift : 0,
     warmth: isIntegerInRange(source.warmth, -10, 10) ? source.warmth : 0,
     brightness: isIntegerInRange(source.brightness, -10, 10) ? source.brightness : 0
@@ -219,6 +236,7 @@ module.exports = {
   THEME_SCHEMA_VERSION,
   contrastRatio,
   getThemePresets,
+  isSupportedThemeSettings,
   normalizeThemeSettings,
   resolveTheme
 };

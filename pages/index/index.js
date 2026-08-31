@@ -21,6 +21,7 @@ const {
   formatCents,
   parseYuanToCents
 } = require('../../domain/money');
+const { parseQuickEntry } = require('../../domain/quick-entry');
 const budgetStore = require('../../services/budget-store');
 const {
   createDataBackup,
@@ -214,6 +215,7 @@ function toTransactionView(item, now) {
     amountText: formatCents(item.amountCents),
     categoryId: item.categoryId,
     categoryLabel: getCategoryLabel(item.categoryId),
+    categoryInitial: getCategoryLabel(item.categoryId).slice(0, 1),
     direction,
     directionLabel: direction === 'income' ? '收入' : '支出',
     amountPrefix: direction === 'income' ? '+' : '-',
@@ -246,6 +248,7 @@ const REVIEW_PERIODS = Object.freeze([
 
 Page({
   data: {
+    activeTab: 'home',
     amountInput: '',
     amountSizeClass: 'amount-normal',
     budget: null,
@@ -263,6 +266,15 @@ Page({
     cycleStartDays: CYCLE_START_DAYS,
     cycleStartDayIndex: 0,
     dateLabel: '',
+    detailsAnalysisVisible: false,
+    detailsError: '',
+    detailsExpenseText: '0.00',
+    detailsIncomeText: '0.00',
+    detailsLoading: false,
+    detailsPeriod: 'month',
+    detailsRecordCount: 0,
+    detailsScopeLabel: '本月支出',
+    detailsTransactions: [],
     drawerMode: 'first',
     drawerVisible: false,
     feedback: '',
@@ -295,6 +307,7 @@ Page({
     isTemplateSaving: false,
     legacyHistoricalSpentText: '',
     quickTemplates: [],
+    recentTransactions: [],
     isRestoringBackup: false,
     noteInput: '',
     recordDirection: 'expense',
@@ -317,12 +330,24 @@ Page({
     result: null,
     shareTitle: '今天还能花｜开始我的收支记录',
     selectedCategoryId: 'food',
+    smartEntryError: '',
+    smartEntryInput: '',
+    smartEntryParsed: null,
+    smartExamples: [
+      { id: 'coffee', label: '咖啡 20' },
+      { id: 'metro', label: '地铁 4' },
+      { id: 'lunch', label: '午餐 32' }
+    ],
+    voiceHint: '',
     sections: {
       composer: false,
       history: false,
       review: false
     },
     statusTone: 'normal',
+    budgetFixedExpenseText: '0.00',
+    budgetIncomeText: '0.00',
+    budgetSavingGoalText: '0.00',
     themeDraft: Object.assign({}, DEFAULT_THEME_SETTINGS),
     themeDrawerVisible: false,
     themeName: INITIAL_THEME.name,
@@ -464,7 +489,11 @@ Page({
         ? 'amount-small'
         : amountText.length > 7 ? 'amount-medium' : 'amount-normal',
       budget,
+      budgetFixedExpenseText: formatCents(budget.fixedExpenseCents),
+      budgetIncomeText: formatCents(budget.incomeCents),
+      budgetSavingGoalText: formatCents(budget.savingGoalCents),
       quickTemplates: (quickTemplates || this.data.quickTemplates).map(toQuickTemplateView),
+      recentTransactions: transactions.slice(0, 3).map((item) => toTransactionView(item, now)),
       readMessage: '',
       result: {
         monthlyRemainingNegative: result.monthlyRemainingCents < 0,
@@ -492,6 +521,7 @@ Page({
       viewState: 'ready'
     });
     const secondaryRefreshes = [];
+    if (this.data.activeTab === 'details') secondaryRefreshes.push(this.refreshDetails(now));
     if (this.data.sections.review) secondaryRefreshes.push(this.refreshReview(now));
     if (this.data.sections.review && this.data.reviewDetailVisible) {
       secondaryRefreshes.push(this.refreshReviewDetails());
@@ -509,6 +539,88 @@ Page({
     if (!expanded) return;
     if (section === 'review') await this.refreshReview(new Date());
     if (section === 'history') await this.refreshHistoryDetail();
+  },
+
+  switchTab(event) {
+    const activeTab = event.currentTarget.dataset.tab;
+    if (!['home', 'details', 'settings'].includes(activeTab)) return;
+    this.setData({ activeTab }, () => {
+      if (activeTab === 'details') this.refreshDetails(new Date());
+      if (typeof wx.pageScrollTo === 'function') {
+        wx.pageScrollTo({ scrollTop: 0, duration: 180 });
+      }
+    });
+  },
+
+  showAllTransactions() {
+    this.setData({ activeTab: 'details' }, () => {
+      this.refreshDetails(new Date());
+      if (typeof wx.pageScrollTo === 'function') {
+        wx.pageScrollTo({ scrollTop: 0, duration: 180 });
+      }
+    });
+  },
+
+  handleDetailsPeriod(event) {
+    const detailsPeriod = event.currentTarget.dataset.period;
+    if (detailsPeriod !== 'month' && detailsPeriod !== 'all') return;
+    if (detailsPeriod === this.data.detailsPeriod) return;
+    this.setData({ detailsPeriod }, () => this.refreshDetails(new Date()));
+  },
+
+  async refreshDetails(now) {
+    const requestId = (this._detailsReadId || 0) + 1;
+    this._detailsReadId = requestId;
+    this.setData({ detailsLoading: true, detailsError: '' });
+    const current = now || new Date();
+    const options = this.data.detailsPeriod === 'all'
+      ? { all: true }
+      : {
+        startDateKey: toDateKey(new Date(current.getFullYear(), current.getMonth(), 1)),
+        endDateKey: toDateKey(new Date(current.getFullYear(), current.getMonth() + 1, 0))
+      };
+    try {
+      const results = await Promise.all([
+        listTransactions(options),
+        listTransactions({ importBatches: true })
+      ]);
+      if (requestId !== this._detailsReadId) return;
+      const transactions = results[0];
+      const expenseCents = transactions
+        .filter((item) => item.direction !== 'income')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const incomeCents = transactions
+        .filter((item) => item.direction === 'income')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      this.setData({
+        detailsExpenseText: formatCents(expenseCents),
+        detailsIncomeText: formatCents(incomeCents),
+        detailsRecordCount: transactions.length,
+        detailsScopeLabel: this.data.detailsPeriod === 'all'
+          ? '全部支出'
+          : `${current.getMonth() + 1}月支出`,
+        detailsTransactions: transactions.map((item) => toTransactionView(item, current)),
+        importBatches: results[1].map((item) => Object.assign({}, item, {
+          importedAtText: formatImportTime(item.importedAt)
+        }))
+      });
+    } catch (error) {
+      if (requestId !== this._detailsReadId) return;
+      console.error('读取明细失败', error);
+      this.setData({ detailsError: '明细暂时没读到，请稍后重试。' });
+    } finally {
+      if (requestId === this._detailsReadId) this.setData({ detailsLoading: false });
+    }
+  },
+
+  toggleDetailsAnalysis() {
+    const detailsAnalysisVisible = !this.data.detailsAnalysisVisible;
+    this.setData({
+      detailsAnalysisVisible,
+      reviewPeriod: detailsAnalysisVisible ? 'month' : this.data.reviewPeriod
+    }, () => {
+      if (detailsAnalysisVisible) this.refreshReview(new Date());
+    });
   },
 
   async refreshReview(now) {
@@ -703,6 +815,64 @@ Page({
     this.setData({ historyDateKey }, () => this.refreshHistoryDetail());
   },
 
+  handleSmartInput(event) {
+    this.setData({
+      smartEntryError: '',
+      smartEntryInput: event.detail.value,
+      smartEntryParsed: null,
+      voiceHint: ''
+    });
+  },
+
+  handleSmartSubmit() {
+    const parsed = parseQuickEntry(this.data.smartEntryInput);
+    if (!parsed.ok) {
+      this.setData({ smartEntryError: parsed.error, smartEntryParsed: null });
+      return;
+    }
+    this.setData({
+      smartEntryError: '',
+      smartEntryParsed: parsed.value,
+      voiceHint: ''
+    });
+    wx.hideKeyboard();
+  },
+
+  handleSmartExample(event) {
+    const value = event.currentTarget.dataset.value;
+    this.setData({ smartEntryInput: value }, () => this.handleSmartSubmit());
+  },
+
+  retrySmartEntry() {
+    this.setData({ smartEntryError: '', smartEntryParsed: null, voiceHint: '' });
+  },
+
+  handleVoiceEntry() {
+    const voiceHint = '语音识别服务暂未配置，请直接输入，例如“咖啡 20”。';
+    this.setData({ voiceHint });
+    wx.showToast({ icon: 'none', title: '请直接输入账单' });
+    trackEvent('voice_entry_unavailable', { fallback: 'text' });
+  },
+
+  async confirmSmartEntry() {
+    const draft = this.data.smartEntryParsed;
+    if (!draft) {
+      this.handleSmartSubmit();
+      return;
+    }
+    const saved = await this.saveTransactionDraft(draft, 'smart_text');
+    if (!saved.ok) {
+      this.setData({ smartEntryError: saved.error });
+      return;
+    }
+    this.setData({
+      smartEntryError: '',
+      smartEntryInput: '',
+      smartEntryParsed: null,
+      voiceHint: ''
+    });
+  },
+
   handleAmountInput(event) {
     this.setData({ amountInput: event.detail.value, inputError: '', feedback: '' });
   },
@@ -732,11 +902,49 @@ Page({
     this.setData({ noteInput: event.detail.value, feedback: '' });
   },
 
-  async handleAddTransaction() {
+  async saveTransactionDraft(draft, entry) {
     if (this._transactionInFlight || this.data.isSaving) {
-      this.setData({ feedback: '正在保存，请稍候。' });
-      return;
+      return { ok: false, error: '正在保存，请稍候。' };
     }
+
+    const now = new Date();
+    const direction = draft.direction;
+    this._transactionInFlight = true;
+    this.setData({ isSaving: true, inputError: '', feedback: '' });
+    try {
+      const result = await addTransaction({
+        action: 'create',
+        amountCents: draft.amountCents,
+        categoryId: draft.categoryId,
+        commandId: commandId('create'),
+        direction,
+        note: draft.note,
+        occurredAt: now.getTime()
+      });
+      await this.refreshAfterMutation();
+      this.setData({
+        feedback: result.duplicate
+          ? '这笔记录已经保存过了。'
+          : direction === 'income'
+            ? `已记下，额外收入已加入${this.data.result.periodLabel}可用额度。`
+            : '已记下，今日额度已更新。'
+      });
+      trackEvent('transaction_saved', {
+        direction,
+        entry: entry || 'manual_form',
+        result: result.duplicate ? 'duplicate' : 'success'
+      });
+      return { ok: true, duplicate: result.duplicate };
+    } catch (error) {
+      console.error('保存交易失败', error);
+      return { ok: false, error: '保存失败，请重试' };
+    } finally {
+      this._transactionInFlight = false;
+      this.setData({ isSaving: false });
+    }
+  },
+
+  async handleAddTransaction() {
     const parsed = parseYuanToCents(this.data.amountInput, {
       allowZero: false,
       maxCents: TRANSACTION_MAX_CENTS
@@ -745,43 +953,18 @@ Page({
       this.setData({ inputError: parsed.error, feedback: '' });
       return;
     }
-
-    const now = new Date();
-    const direction = this.data.recordDirection;
-    this._transactionInFlight = true;
-    this.setData({ isSaving: true, inputError: '', feedback: '' });
-    try {
-      const result = await addTransaction({
-        action: 'create',
-        amountCents: parsed.value,
-        categoryId: this.data.selectedCategoryId,
-        commandId: commandId('create'),
-        direction,
-        note: this.data.noteInput,
-        occurredAt: now.getTime()
-      });
-      this.setData({
-        amountInput: '',
-        noteInput: '',
-        feedback: result.duplicate
-          ? '这笔记录已经保存过了。'
-          : direction === 'income'
-            ? `已记下，额外收入已加入${this.data.result.periodLabel}可用额度。`
-            : '已记下，今日额度已更新。'
-      });
-      wx.hideKeyboard();
-      await this.refreshAfterMutation();
-      trackEvent('transaction_saved', {
-        direction,
-        result: result.duplicate ? 'duplicate' : 'success'
-      });
-    } catch (error) {
-      console.error('保存交易失败', error);
-      this.setData({ feedback: '', inputError: '保存失败，请重试' });
-    } finally {
-      this._transactionInFlight = false;
-      this.setData({ isSaving: false });
+    const saved = await this.saveTransactionDraft({
+      amountCents: parsed.value,
+      categoryId: this.data.selectedCategoryId,
+      direction: this.data.recordDirection,
+      note: this.data.noteInput
+    }, 'manual_form');
+    if (!saved.ok) {
+      this.setData({ feedback: '', inputError: saved.error });
+      return;
     }
+    this.setData({ amountInput: '', noteInput: '' });
+    wx.hideKeyboard();
   },
 
   async saveCurrentAsTemplate() {
@@ -876,7 +1059,8 @@ Page({
 
   openEditTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const transaction = this.data.historyTransactions.concat(this.data.reviewTransactions)
+    const transaction = this.data.historyTransactions
+      .concat(this.data.reviewTransactions, this.data.detailsTransactions)
       .find((item) => item.id === transactionId);
     if (!transaction) return;
     const originalDate = new Date(transaction.occurredAt);
@@ -991,7 +1175,8 @@ Page({
 
   handleDeleteTransaction(event) {
     const transactionId = event.currentTarget.dataset.id;
-    const transaction = this.data.historyTransactions.concat(this.data.reviewTransactions)
+    const transaction = this.data.historyTransactions
+      .concat(this.data.reviewTransactions, this.data.detailsTransactions)
       .find((item) => item.id === transactionId);
     if (!transaction) return;
     const amountText = transaction.amountText;
@@ -1411,7 +1596,10 @@ Page({
       success: async (result) => {
         try {
           const preview = await previewBill(result.tempFiles && result.tempFiles[0], new Date());
-          this.setData({ billImportPreview: preview });
+          this.setData({
+            activeTab: 'details',
+            billImportPreview: preview
+          }, () => this.refreshDetails(new Date()));
           trackEvent('bill_import', {
             outcome: 'previewed',
             recordCount: preview.importCount

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { setStorageAdapterForTests } = require('../infrastructure/storage');
+const { setStorageAdapterForTests, writeThemeRaw } = require('../infrastructure/storage');
 const { decodeBillText, readZipTextEntries } = require('../infrastructure/file-system');
 const budgetStore = require('../services/budget-store');
 const {
@@ -800,12 +800,12 @@ test('imported cross-day, cross-month and cross-year data stays in the correct r
 
 test('theme preference persists independently and resolves safe contrast', async () => {
   const saved = await themeStore.saveTheme({
-    presetId: 'midnight',
+    presetId: 'ocean',
     hueShift: 12,
     warmth: -3,
     brightness: 4
   });
-  assert.equal(saved.settings.presetId, 'midnight');
+  assert.equal(saved.settings.presetId, 'ocean');
   assert.match(saved.resolved.styleText, /--theme-primary:/);
 
   const loaded = await themeStore.loadTheme();
@@ -813,8 +813,14 @@ test('theme preference persists independently and resolves safe contrast', async
   assert.equal(loaded.presets.filter((item) => item.selected).length, 1);
 
   const reset = await themeStore.resetTheme();
-  assert.equal(reset.settings.presetId, 'forest');
+  assert.equal(reset.settings.presetId, 'graphite');
   assert.equal(reset.settings.hueShift, 0);
+
+  await writeThemeRaw({
+    schemaVersion: 1,
+    settings: { presetId: 'forest', hueShift: 0, warmth: 0, brightness: 0 }
+  });
+  assert.equal((await themeStore.loadTheme()).settings.presetId, 'sage');
 });
 
 test('complete JSON backup previews and restores state, import metadata and theme', async () => {
@@ -860,7 +866,7 @@ test('complete JSON backup previews and restores state, import metadata and them
         occurredAt: now.getTime()
       }]
     });
-    await themeStore.saveTheme({ presetId: 'midnight', hueShift: 2, warmth: 0, brightness: 0 });
+    await themeStore.saveTheme({ presetId: 'ocean', hueShift: 2, warmth: 0, brightness: 0 });
     const backup = await createDataBackup(now);
     assert.match(backup.fileName, /完整备份-20260810-0930\.json$/);
     const backupText = files.get(backup.filePath);
@@ -879,11 +885,11 @@ test('complete JSON backup previews and restores state, import metadata and them
       note: '备份后新增',
       occurredAt: now.getTime()
     });
-    await themeStore.saveTheme({ presetId: 'coral', hueShift: 0, warmth: 0, brightness: 0 });
+    await themeStore.saveTheme({ presetId: 'sage', hueShift: 0, warmth: 0, brightness: 0 });
     await restoreDataBackup(backup.filePath);
     assert.deepEqual((await listTransactions({ all: true })).map((item) => item.id), ['alipay-backup-record']);
     assert.equal((await listTransactions({ importBatches: true }))[0].id, 'alipay-backup-batch');
-    assert.equal((await themeStore.loadTheme()).settings.presetId, 'midnight');
+    assert.equal((await themeStore.loadTheme()).settings.presetId, 'ocean');
 
     files.set('wxfile://user/not-backup.json', '{"fileType":"wrong"}');
     await assert.rejects(previewDataBackup({
@@ -939,7 +945,7 @@ test('backup restore keeps the previous state and theme when state persistence f
       note: '备份内容',
       occurredAt: now.getTime()
     });
-    await themeStore.saveTheme({ presetId: 'midnight', hueShift: 0, warmth: 0, brightness: 0 });
+    await themeStore.saveTheme({ presetId: 'ocean', hueShift: 0, warmth: 0, brightness: 0 });
     const backup = await createDataBackup(now);
     await addTransaction({
       action: 'create',
@@ -949,7 +955,7 @@ test('backup restore keeps the previous state and theme when state persistence f
       note: '当前内容',
       occurredAt: now.getTime()
     });
-    await themeStore.saveTheme({ presetId: 'coral', hueShift: 0, warmth: 0, brightness: 0 });
+    await themeStore.saveTheme({ presetId: 'sage', hueShift: 0, warmth: 0, brightness: 0 });
     failStateWrites = true;
     await assert.rejects(restoreDataBackup(backup.filePath), /quota/);
     failStateWrites = false;
@@ -957,7 +963,7 @@ test('backup restore keeps the previous state and theme when state persistence f
       'backup-original',
       'current-kept'
     ]);
-    assert.equal((await themeStore.loadTheme()).settings.presetId, 'coral');
+    assert.equal((await themeStore.loadTheme()).settings.presetId, 'sage');
   } finally {
     global.wx = originalWx;
   }

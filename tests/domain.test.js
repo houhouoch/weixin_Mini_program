@@ -10,6 +10,7 @@ const {
   toDateKey
 } = require('../domain/date');
 const { formatCents, parseYuanToCents } = require('../domain/money');
+const { parseQuickEntry } = require('../domain/quick-entry');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
 const { parseAlipayBillCsv } = require('../domain/alipay-bill');
@@ -21,6 +22,7 @@ const {
 const {
   contrastRatio,
   getThemePresets,
+  normalizeThemeSettings,
   resolveTheme
 } = require('../domain/theme');
 
@@ -42,6 +44,24 @@ test('amount parsing is strict and uses cents', () => {
   assert.equal(parseYuanToCents('1..2').ok, false);
   assert.equal(parseYuanToCents('abc').ok, false);
   assert.equal(formatCents(-30000), '-300.00');
+});
+
+test('quick entry parses natural expense and income phrases', () => {
+  assert.deepEqual(parseQuickEntry('咖啡 20').value, {
+    amountCents: 2000,
+    amountText: '20.00',
+    categoryId: 'food',
+    categoryLabel: '餐饮',
+    direction: 'expense',
+    directionLabel: '支出',
+    note: '咖啡',
+    sourceText: '咖啡 20'
+  });
+  assert.equal(parseQuickEntry('花了20 在咖啡').value.note, '咖啡');
+  assert.equal(parseQuickEntry('地铁４.５元').value.categoryId, 'transport');
+  assert.equal(parseQuickEntry('工资 5000').value.categoryId, 'income_salary');
+  assert.equal(parseQuickEntry('工资 5000').value.direction, 'income');
+  assert.equal(parseQuickEntry('今天买东西').ok, false);
 });
 
 test('budget relations reject impossible saving and spending combinations', () => {
@@ -482,8 +502,44 @@ test('custom spending summary rejects reversed or future date ranges', () => {
   }), /统计时间段无效/);
 });
 
+test('Apple-light theme presets expose four restrained and distinct choices', () => {
+  const presets = getThemePresets('graphite');
+  assert.deepEqual(presets.map((preset) => preset.id), ['graphite', 'ocean', 'sage', 'sand']);
+  assert.deepEqual(presets.map((preset) => preset.name), ['石墨', '海蓝', '鼠尾草', '暖砂']);
+  assert.equal(presets.filter((preset) => preset.selected).length, 1);
+  assert.equal(presets[0].selected, true);
+
+  const styles = presets.map((preset) => resolveTheme({
+    presetId: preset.id,
+    hueShift: 0,
+    warmth: 0,
+    brightness: 0
+  }).styleText);
+  assert.equal(new Set(styles).size, presets.length);
+});
+
+test('legacy theme choices migrate to the closest Apple-light preset', () => {
+  assert.deepEqual(normalizeThemeSettings({
+    presetId: 'forest',
+    hueShift: 3,
+    warmth: 2,
+    brightness: -1
+  }), {
+    presetId: 'sage',
+    hueShift: 3,
+    warmth: 2,
+    brightness: -1
+  });
+  assert.equal(normalizeThemeSettings({
+    presetId: 'midnight',
+    hueShift: 0,
+    warmth: 0,
+    brightness: 0
+  }).presetId, 'graphite');
+});
+
 test('all theme presets keep readable contrast across the full safe tuning range', () => {
-  getThemePresets('forest').forEach((preset) => {
+  getThemePresets('graphite').forEach((preset) => {
     for (let hueShift = -30; hueShift <= 30; hueShift += 1) {
       for (let warmth = -10; warmth <= 10; warmth += 1) {
         for (let brightness = -10; brightness <= 10; brightness += 1) {

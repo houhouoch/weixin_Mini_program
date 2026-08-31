@@ -1,4 +1,4 @@
-const { normalizeThemeSettings } = require('../domain/theme');
+const { isSupportedThemeSettings, normalizeThemeSettings } = require('../domain/theme');
 const { readTextFile, writeUserFile } = require('../infrastructure/file-system');
 const themeStore = require('./theme-store');
 const { normalizeState, readState, saveState } = require('./state-store');
@@ -17,8 +17,7 @@ function formatLocalTimestamp(value) {
 }
 
 function isValidThemeSettings(settings) {
-  return Boolean(settings)
-    && JSON.stringify(normalizeThemeSettings(settings)) === JSON.stringify(settings);
+  return isSupportedThemeSettings(settings);
 }
 
 function parseBackupText(text) {
@@ -40,6 +39,7 @@ function parseBackupText(text) {
     throw new Error('备份内容已损坏或版本不受支持');
   }
   document.state = normalizedState;
+  document.themeSettings = normalizeThemeSettings(document.themeSettings);
   return document;
 }
 

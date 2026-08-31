@@ -2,6 +2,7 @@ const {
   DEFAULT_THEME_SETTINGS,
   THEME_SCHEMA_VERSION,
   getThemePresets,
+  isSupportedThemeSettings,
   normalizeThemeSettings,
   resolveTheme
 } = require('../domain/theme');
@@ -10,9 +11,9 @@ const { readThemeRaw, writeThemeRaw } = require('../infrastructure/storage');
 function isValidStoredTheme(raw) {
   return Boolean(
     raw
-    && raw.schemaVersion === THEME_SCHEMA_VERSION
+    && (raw.schemaVersion === 1 || raw.schemaVersion === THEME_SCHEMA_VERSION)
     && raw.settings
-    && JSON.stringify(normalizeThemeSettings(raw.settings)) === JSON.stringify(raw.settings)
+    && isSupportedThemeSettings(raw.settings)
   );
 }
 

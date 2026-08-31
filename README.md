@@ -60,6 +60,8 @@ cd weix_iMini_program
 
 ### 配置每台电脑的 AppID
 
+本仓库正式发布目标为“今天还能花多少钱”（AppID：`wxd7449a88684708f3`）。有该小程序权限的开发者应把此 AppID 写入本机的 `project.private.config.json`；公开的 `project.config.json` 继续保留测试 AppID。
+
 最简单的方式是在微信开发者工具中选择实际 AppID，工具会生成本机专用的 `project.private.config.json`。也可以手动复制示例：
 
 ```bash

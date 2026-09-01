@@ -333,6 +333,13 @@ Page({
     detailsAnalysisError: '',
     detailsAnalysisLoading: false,
     detailsAnalysisSummary: null,
+    detailsDayDateKey: '',
+    detailsDayDateLabel: '',
+    detailsDayError: '',
+    detailsDayExpenseText: '0.00',
+    detailsDayLoading: false,
+    detailsDayTransactions: [],
+    detailsDayVisible: false,
     detailsError: '',
     detailsExpenseText: '0.00',
     detailsIncomeText: '0.00',
@@ -722,6 +729,9 @@ Page({
       ));
       if (this.data.detailsAnalysisVisible) {
         secondaryRefreshes.push(this.refreshDetailsAnalysis(detailsMonth));
+        if (this.data.detailsDayVisible && this.data.detailsDayDateKey) {
+          secondaryRefreshes.push(this.refreshDetailsCalendarDay(this.data.detailsDayDateKey));
+        }
       }
     }
     if (this.data.sections.review) secondaryRefreshes.push(this.refreshReview(now));
@@ -750,7 +760,12 @@ Page({
       if (activeTab === 'details') {
         const selectedMonth = this.getDetailsMonthDate() || new Date();
         this.refreshDetails(this.data.detailsPeriod === 'month' ? selectedMonth : new Date());
-        if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
+        if (this.data.detailsAnalysisVisible) {
+          this.refreshDetailsAnalysis(selectedMonth);
+          if (this.data.detailsDayVisible && this.data.detailsDayDateKey) {
+            this.refreshDetailsCalendarDay(this.data.detailsDayDateKey);
+          }
+        }
       }
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
@@ -762,7 +777,12 @@ Page({
     this.setData({ activeTab: 'details' }, () => {
       const selectedMonth = this.getDetailsMonthDate() || new Date();
       this.refreshDetails(this.data.detailsPeriod === 'month' ? selectedMonth : new Date());
-      if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
+      if (this.data.detailsAnalysisVisible) {
+        this.refreshDetailsAnalysis(selectedMonth);
+        if (this.data.detailsDayVisible && this.data.detailsDayDateKey) {
+          this.refreshDetailsCalendarDay(this.data.detailsDayDateKey);
+        }
+      }
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
       }
@@ -790,7 +810,16 @@ Page({
     const currentKey = toMonthKey(new Date());
     if (!nextKey || nextKey < REVIEW_MIN_MONTH_KEY || nextKey > currentKey) return;
     const selectedMonth = monthDateFromKey(nextKey);
-    this.setData(detailsMonthState(nextKey, new Date()), () => {
+    this._detailsDayReadId = (this._detailsDayReadId || 0) + 1;
+    this.setData(Object.assign(detailsMonthState(nextKey, new Date()), {
+      detailsDayDateKey: '',
+      detailsDayDateLabel: '',
+      detailsDayError: '',
+      detailsDayExpenseText: '0.00',
+      detailsDayLoading: false,
+      detailsDayTransactions: [],
+      detailsDayVisible: false
+    }), () => {
       if (this.data.detailsPeriod === 'month') this.refreshDetails(selectedMonth);
       if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
     });
@@ -798,6 +827,52 @@ Page({
       direction: offset < 0 ? 'previous' : 'next',
       isCurrent: nextKey === currentKey
     });
+  },
+
+  handleDetailsCalendarDay(event) {
+    const dateKey = event.currentTarget.dataset.dateKey;
+    const date = parseLocalDateKey(dateKey);
+    if (!date
+      || dateKey.slice(0, 7) !== this.data.detailsMonthKey
+      || dateKey > toDateKey(new Date())) return;
+    this.setData({
+      detailsDayDateKey: dateKey,
+      detailsDayDateLabel: formatChineseDate(date),
+      detailsDayVisible: true
+    }, () => this.refreshDetailsCalendarDay(dateKey));
+  },
+
+  async refreshDetailsCalendarDay(dateKey) {
+    if (!parseLocalDateKey(dateKey)) return;
+    const requestId = (this._detailsDayReadId || 0) + 1;
+    this._detailsDayReadId = requestId;
+    this.setData({
+      detailsDayError: '',
+      detailsDayExpenseText: '0.00',
+      detailsDayLoading: true,
+      detailsDayTransactions: []
+    });
+    try {
+      const transactions = await listTransactions({ dateKey });
+      if (requestId !== this._detailsDayReadId) return;
+      const expenses = transactions.filter((item) => item.direction !== 'income');
+      const expenseCents = expenses.reduce((sum, item) => sum + item.amountCents, 0);
+      this.setData({
+        detailsDayExpenseText: formatCents(expenseCents),
+        detailsDayTransactions: expenses.map((item) => toTransactionView(item, new Date()))
+      });
+      trackEvent('details_calendar_day_viewed', {
+        outcome: expenses.length ? 'records' : 'empty'
+      });
+    } catch (error) {
+      if (requestId !== this._detailsDayReadId) return;
+      console.error('读取日历日期明细失败', error);
+      this.setData({ detailsDayError: '这一天的支出暂时没读到，请重试。' });
+    } finally {
+      if (requestId === this._detailsDayReadId) {
+        this.setData({ detailsDayLoading: false });
+      }
+    }
   },
 
   async refreshDetails(now) {

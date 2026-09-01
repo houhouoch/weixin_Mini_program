@@ -483,6 +483,7 @@ test('day and month summaries use only real dated records for trends', () => {
   assert.equal(month.chart.reduce((sum, item) => sum + item.amountCents, 0), 1900);
   assert.equal(month.calendarDays.filter((item) => !item.isBlank).length, 31);
   assert.equal(month.calendarDays.find((item) => item.day === 9).amountText, '¥15');
+  assert.equal(month.calendarDays.find((item) => item.day === 10).isFuture, true);
   assert.equal(month.dailyTrend.length, 31);
   assert.equal(month.dailyTrend[8].amountCents, 1500);
   assert.equal(month.analysisMetrics[0].value, '餐饮');
@@ -494,6 +495,7 @@ test('day and month summaries use only real dated records for trends', () => {
   assert.equal(previousMonth.calendarDays.find((item) => item.day === 4).amountText, '¥25');
   assert.equal(previousMonth.dailyTrend[3].amountCents, 2500);
   assert.equal(previousMonth.calendarDays.some((item) => item.isToday), false);
+  assert.equal(previousMonth.calendarDays.some((item) => item.isFuture), false);
   assert.throws(
     () => deriveSpendingSummary(state, 'month', now, { monthKey: '2026-09' }),
     /统计月份无效/

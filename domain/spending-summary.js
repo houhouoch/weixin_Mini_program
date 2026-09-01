@@ -71,6 +71,7 @@ function buildMonthCalendar(monthKey, dayTotals, now) {
       day,
       hasAmount: amountCents > 0,
       isHigh: max > 0 && amountCents >= max * 0.72,
+      isFuture: dateKey > todayKey,
       isToday: dateKey === todayKey,
       key: dateKey
     };

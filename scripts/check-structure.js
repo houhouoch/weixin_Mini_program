@@ -165,6 +165,9 @@ check(wxml.includes('detailsAnalysisSummary.calendarDays') && wxml.includes('mon
 check(wxml.includes('bindtap="handleDetailsMonthChange"')
   && pageJs.includes('REVIEW_MIN_MONTH_KEY')
   && pageJs.includes("getSpendingSummary('month', new Date(),"), '月度分析支持近 36 个月切换且不进入未来月份');
+check(wxml.includes('bindtap="handleDetailsCalendarDay"')
+  && wxml.includes('detailsDayTransactions')
+  && pageJs.includes("listTransactions({ dateKey })"), '月历日期可点击并读取当天真实支出');
 check(wxml.includes('本地版本未配置 OCR 服务'), '拍照记账在未配置 OCR 时不伪造识别结果');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');

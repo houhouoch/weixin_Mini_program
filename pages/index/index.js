@@ -1899,6 +1899,7 @@ Page({
   },
 
   applyThemeModel(model) {
+    this.applyThemeChrome(model.resolved);
     this.setData({
       themeDraft: Object.assign({}, model.settings),
       themeName: model.resolved.name,
@@ -1907,6 +1908,21 @@ Page({
       themeSettings: Object.assign({}, model.settings),
       themeStyle: model.resolved.styleText
     });
+  },
+
+  applyThemeChrome(resolved) {
+    if (!resolved || typeof wx === 'undefined') return;
+    wx.setNavigationBarColor({
+      frontColor: resolved.scheme === 'dark' ? '#ffffff' : '#000000',
+      backgroundColor: resolved.page
+    });
+    if (typeof wx.setBackgroundColor === 'function') {
+      wx.setBackgroundColor({
+        backgroundColor: resolved.page,
+        backgroundColorTop: resolved.page,
+        backgroundColorBottom: resolved.page
+      });
+    }
   },
 
   openSettings() {
@@ -1973,6 +1989,7 @@ Page({
 
   closeThemeDrawer() {
     const resolved = resolveTheme(this.data.themeSettings);
+    this.applyThemeChrome(resolved);
     this.setData({
       themeDraft: Object.assign({}, this.data.themeSettings),
       themeDrawerVisible: false,
@@ -1984,6 +2001,7 @@ Page({
 
   previewTheme(settings) {
     const resolved = resolveTheme(settings);
+    this.applyThemeChrome(resolved);
     this.setData({
       themeDraft: settings,
       themePresets: getThemePresets(settings.presetId),
@@ -1993,20 +2011,7 @@ Page({
   },
 
   handleThemePreset(event) {
-    this.previewTheme({
-      presetId: event.currentTarget.dataset.id,
-      hueShift: 0,
-      warmth: 0,
-      brightness: 0
-    });
-  },
-
-  handleThemeSlider(event) {
-    const field = event.currentTarget.dataset.field;
-    const settings = Object.assign({}, this.data.themeDraft, {
-      [field]: Number(event.detail.value)
-    });
-    this.previewTheme(settings);
+    this.previewTheme({ presetId: event.currentTarget.dataset.id });
   },
 
   resetThemeDraft() {

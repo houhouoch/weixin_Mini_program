@@ -1,4 +1,8 @@
-const { isSupportedThemeSettings, normalizeThemeSettings } = require('../domain/theme');
+const {
+  THEME_SCHEMA_VERSION,
+  isSupportedThemeSettings,
+  normalizeThemeSettings
+} = require('../domain/theme');
 const { readTextFile, writeUserFile } = require('../infrastructure/file-system');
 const themeStore = require('./theme-store');
 const { normalizeState, readState, saveState } = require('./state-store');
@@ -39,7 +43,11 @@ function parseBackupText(text) {
     throw new Error('备份内容已损坏或版本不受支持');
   }
   document.state = normalizedState;
-  document.themeSettings = normalizeThemeSettings(document.themeSettings);
+  document.themeSettings = normalizeThemeSettings(
+    document.themeSettings,
+    document.themeSchemaVersion || 2
+  );
+  document.themeSchemaVersion = THEME_SCHEMA_VERSION;
   return document;
 }
 
@@ -72,6 +80,7 @@ async function createDataBackup(now) {
     formatVersion: BACKUP_FORMAT_VERSION,
     exportedAt: exportedAt.toISOString(),
     state: result.state,
+    themeSchemaVersion: THEME_SCHEMA_VERSION,
     themeSettings: theme.settings
   };
   const stamp = `${exportedAt.getFullYear()}${pad2(exportedAt.getMonth() + 1)}${pad2(exportedAt.getDate())}-${pad2(exportedAt.getHours())}${pad2(exportedAt.getMinutes())}`;

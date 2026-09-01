@@ -11,14 +11,14 @@ const { readThemeRaw, writeThemeRaw } = require('../infrastructure/storage');
 function isValidStoredTheme(raw) {
   return Boolean(
     raw
-    && (raw.schemaVersion === 1 || raw.schemaVersion === THEME_SCHEMA_VERSION)
+    && [1, 2, THEME_SCHEMA_VERSION].includes(raw.schemaVersion)
     && raw.settings
     && isSupportedThemeSettings(raw.settings)
   );
 }
 
-function toViewModel(settings) {
-  const normalized = normalizeThemeSettings(settings);
+function toViewModel(settings, sourceSchemaVersion) {
+  const normalized = normalizeThemeSettings(settings, sourceSchemaVersion);
   return {
     settings: normalized,
     resolved: resolveTheme(normalized),
@@ -28,13 +28,15 @@ function toViewModel(settings) {
 
 async function loadTheme() {
   const raw = await readThemeRaw();
-  return toViewModel(isValidStoredTheme(raw) ? raw.settings : DEFAULT_THEME_SETTINGS);
+  return isValidStoredTheme(raw)
+    ? toViewModel(raw.settings, raw.schemaVersion)
+    : toViewModel(DEFAULT_THEME_SETTINGS, THEME_SCHEMA_VERSION);
 }
 
 async function saveTheme(settings) {
   const normalized = normalizeThemeSettings(settings);
   await writeThemeRaw({ schemaVersion: THEME_SCHEMA_VERSION, settings: normalized });
-  return toViewModel(normalized);
+  return toViewModel(normalized, THEME_SCHEMA_VERSION);
 }
 
 async function resetTheme() {

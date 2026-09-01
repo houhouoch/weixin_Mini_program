@@ -1283,8 +1283,8 @@
   <view class="drawer-mask" bindtap="closeThemeDrawer"></view>
   <view class="theme-drawer">
     <view class="drawer-handle"></view>
-    <text class="theme-drawer__title">选择你的页面气质</text>
-    <text class="theme-drawer__subtitle">保持 Apple 浅色骨架，只调整强调色与背景温度</text>
+    <text class="theme-drawer__title">外观</text>
+    <text class="theme-drawer__subtitle">只选择浅色或深色；交互强调色固定为系统蓝。</text>
 
     <scroll-view class="theme-scroll" scroll-y="true">
       <view class="theme-preset-grid" role="list">
@@ -1296,84 +1296,27 @@
           bindtap="handleThemePreset"
           aria-label="选择{{item.name}}主题"
         >
-          <view class="theme-swatches">
-            <view
-              wx:for="{{item.colors}}"
-              wx:for-item="color"
-              wx:key="*this"
-              class="theme-swatch"
-              style="background: {{color}};"
-            ></view>
+          <view class="theme-preview" style="background: {{item.preview.page}};">
+            <view class="theme-preview__bar" style="background: {{item.preview.text}};"></view>
+            <view class="theme-preview__surface" style="background: {{item.preview.surface}};">
+              <view class="theme-preview__accent" style="background: {{item.preview.primary}};"></view>
+            </view>
           </view>
-          <text>{{item.name}}{{item.selected ? ' ✓' : ''}}</text>
+          <view class="theme-preset__copy">
+            <text class="theme-preset__name">{{item.name}}</text>
+            <text class="theme-preset__description">{{item.description}}</text>
+          </view>
+          <text class="theme-preset__check" wx:if="{{item.selected}}">✓</text>
         </button>
       </view>
 
-      <view class="theme-advanced">
-        <text class="theme-advanced__title">高级微调</text>
-        <view class="theme-control">
-          <view class="theme-control__heading">
-            <text>主色调</text>
-            <text>{{themeDraft.hueShift}}</text>
-          </view>
-          <slider
-            min="-30"
-            max="30"
-            step="1"
-            value="{{themeDraft.hueShift}}"
-            data-field="hueShift"
-            bindchanging="handleThemeSlider"
-            bindchange="handleThemeSlider"
-            activeColor="{{themeResolved.primary}}"
-            block-color="{{themeResolved.primary}}"
-            aria-label="调整主色调"
-          />
-        </view>
-        <view class="theme-control">
-          <view class="theme-control__heading">
-            <text>背景温度</text>
-            <text>{{themeDraft.warmth}}</text>
-          </view>
-          <slider
-            min="-10"
-            max="10"
-            step="1"
-            value="{{themeDraft.warmth}}"
-            data-field="warmth"
-            bindchanging="handleThemeSlider"
-            bindchange="handleThemeSlider"
-            activeColor="#F4B942"
-            block-color="#F4B942"
-            aria-label="调整背景温度"
-          />
-        </view>
-        <view class="theme-control">
-          <view class="theme-control__heading">
-            <text>页面亮度</text>
-            <text>{{themeDraft.brightness}}</text>
-          </view>
-          <slider
-            min="-10"
-            max="10"
-            step="1"
-            value="{{themeDraft.brightness}}"
-            data-field="brightness"
-            bindchanging="handleThemeSlider"
-            bindchange="handleThemeSlider"
-            activeColor="{{themeResolved.primary}}"
-            block-color="{{themeResolved.primary}}"
-            aria-label="调整页面亮度"
-          />
-        </view>
-      </view>
-
       <view class="theme-safety-note">
-        <text>警示黄与超支红保持固定，确保任何主题都能看懂。</text>
+        <text>警示黄与超支红由系统锁定，不随外观变化。</text>
       </view>
 
       <view class="theme-actions">
-        <button class="theme-action theme-action--secondary" bindtap="resetThemeDraft">恢复默认</button>
-        <button class="theme-action theme-action--primary" bindtap="saveThemeSettings">应用主题</button>
+        <button class="theme-action theme-action--secondary" bindtap="resetThemeDraft">恢复浅色</button>
+        <button class="theme-action theme-action--primary" bindtap="saveThemeSettings">应用外观</button>
       </view>
     </scroll-view>
   </view>

@@ -7,7 +7,7 @@ pages/index (展示与交互)
   -> services/budget-store (预算与月份生命周期，Promise)
   -> services/transactions (仅 addTransaction/listTransactions，Promise)
   -> services/spending-summary (日/月/年/自定义区间本地聚合，Promise)
-  -> services/theme-store (预设与安全微调，Promise)
+  -> services/theme-store (浅色/深色外观与旧主题迁移，Promise)
   -> services/ledger-export (本地 XLSX 生成与文件写入，Promise)
   -> services/data-backup (完整 JSON 备份、预览与恢复，Promise)
   -> services/wechat-bill-import (账单解析、预览与已有流水去重，Promise)
@@ -32,7 +32,7 @@ Apple 5.0 仍保持单页路由：文字/语音多笔核对与照片核对使用
 
 交易修改与删除使用 `addTransaction({ action: 'update' | 'delete', transactionId, commandId, ... })`，从而满足交易模块仅暴露两个 API，同时支持当前月和归档纠错。`listTransactions({ dateKey })` 在同一读取 API 内提供按日明细。防重复由页面锁和数据层 `commandId` 幂等共同保证。
 
-V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token 派生”的顺序实现。页面只保存有限主题参数，不保存任意 CSS/WXSS 色值。年度总额可以包含启用前汇总，但年度趋势、最高月和分类排行只使用真实逐笔记录，并显示数据范围说明。
+V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token 派生”的顺序实现。当前外观只保存 `light` 或 `graphite` 模式，不保存任意 CSS/WXSS 色值；旧彩色主题统一迁移到浅色，旧 `midnight` 迁移到深色。年度总额可以包含启用前汇总，但年度趋势、最高月和分类排行只使用真实逐笔记录，并显示数据范围说明。
 
 ## 文件计划
 
@@ -47,7 +47,7 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 - `services/budget-store.js`：设置、读取、重置、跨月。
 - `services/transactions.js`：添加、修改、删除命令与当前/归档按日列表。
 - `services/spending-summary.js`：按日/月/年/自定义时间段聚合真实本地记录。
-- `services/theme-store.js`：主题预设、安全微调和默认恢复。
+- `services/theme-store.js`：浅色/深色外观、旧主题迁移和默认恢复。
 - `domain/ledger-workbook.js`：将当前与归档逐笔记录生成标准 XLSX。
 - `infrastructure/file-system.js`：Promise 化小程序用户目录写入、UTF-8/GB18030 文本与 XLSX 条目读取。
 - `services/ledger-export.js`：读取本地状态并交付 Excel 文件。
@@ -75,7 +75,7 @@ V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token �
 1. 语义状态文案和样式映射；
 2. 日/月聚合纯函数与消费回看模块；
 3. schema 3 历史归档迁移和真实年视图；
-4. 主题预设、token 派生和安全微调；
+4. 浅色/深色外观、token 派生和旧主题迁移；
 5. 开发者工具与真机的状态、图表、主题对比度验证。
 
 ## V1.3 实施顺序

@@ -150,7 +150,8 @@ check(wxml.includes('朋友圈 · 右上角'), '提供朋友圈右上角菜单�
 check(wxml.includes('这笔花在哪儿'), '记录区先回答消费去向');
 check(wxml.includes('maxlength="20"'), '用途说明限制为 20 个字符');
 check(/id: 'day'[\s\S]*id: 'month'[\s\S]*id: 'year'[\s\S]*id: 'custom'/.test(pageJs), '回看区提供日/月/年/自定义四种范围');
-check(wxml.includes('警示黄与超支红保持固定'), '主题抽屉说明警示语义色不可覆盖');
+check(wxml.includes('警示黄与超支红由系统锁定'), '主题抽屉说明警示语义色不可覆盖');
+check(!wxml.includes('<slider'), '主题设置不再提供任意调色滑杆');
 check(
   ['review', 'composer', 'history'].every((section) => wxml.includes(`data-section="${section}"`)),
   '消费回看、快速记账、记录历史均可独立折叠'
@@ -237,6 +238,9 @@ check(stateSource.includes('HISTORY_MONTH_LIMIT = 36'), '历史归档设置本�
 
 const themeSource = fs.readFileSync(path.join(root, 'domain/theme.js'), 'utf8');
 check(!/--theme-(danger|warning)/.test(themeSource), '用户主题不生成 danger/warning 语义变量');
+check(themeSource.includes("name: '浅色'")
+  && themeSource.includes("name: '深色'")
+  && !/name: '(海蓝|鼠尾草|暖砂)'/.test(themeSource), '主题只提供 Apple 浅色与深色外观');
 
 const wxss = fs.readFileSync(path.join(root, 'pages/index/index.wxss'), 'utf8');
 check(

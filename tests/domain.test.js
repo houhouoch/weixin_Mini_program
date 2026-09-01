@@ -568,33 +568,29 @@ test('custom spending summary rejects reversed or future date ranges', () => {
   }), /统计时间段无效/);
 });
 
-test('Apple-light theme presets expose four restrained and distinct choices', () => {
-  const presets = getThemePresets('graphite');
-  assert.deepEqual(presets.map((preset) => preset.id), ['graphite', 'ocean', 'sage', 'sand']);
-  assert.deepEqual(presets.map((preset) => preset.name), ['石墨', '海蓝', '鼠尾草', '暖砂']);
+test('Apple appearance offers only light and graphite modes', () => {
+  const presets = getThemePresets('light');
+  assert.deepEqual(presets.map((preset) => preset.id), ['light', 'graphite']);
+  assert.deepEqual(presets.map((preset) => preset.name), ['浅色', '深色']);
   assert.equal(presets.filter((preset) => preset.selected).length, 1);
   assert.equal(presets[0].selected, true);
 
   const styles = presets.map((preset) => resolveTheme({
-    presetId: preset.id,
-    hueShift: 0,
-    warmth: 0,
-    brightness: 0
+    presetId: preset.id
   }).styleText);
   assert.equal(new Set(styles).size, presets.length);
+  assert.match(styles[0], /--theme-primary:#0066CC/);
+  assert.match(styles[1], /--theme-primary:#2997FF/);
 });
 
-test('legacy theme choices migrate to the closest Apple-light preset', () => {
+test('legacy color skins migrate to Apple light while legacy midnight stays dark', () => {
   assert.deepEqual(normalizeThemeSettings({
     presetId: 'forest',
     hueShift: 3,
     warmth: 2,
     brightness: -1
   }), {
-    presetId: 'sage',
-    hueShift: 3,
-    warmth: 2,
-    brightness: -1
+    presetId: 'light'
   });
   assert.equal(normalizeThemeSettings({
     presetId: 'midnight',
@@ -602,27 +598,17 @@ test('legacy theme choices migrate to the closest Apple-light preset', () => {
     warmth: 0,
     brightness: 0
   }).presetId, 'graphite');
+  assert.equal(normalizeThemeSettings({ presetId: 'graphite' }, 2).presetId, 'light');
 });
 
-test('all theme presets keep readable contrast across the full safe tuning range', () => {
-  getThemePresets('graphite').forEach((preset) => {
-    for (let hueShift = -30; hueShift <= 30; hueShift += 1) {
-      for (let warmth = -10; warmth <= 10; warmth += 1) {
-        for (let brightness = -10; brightness <= 10; brightness += 1) {
-          const resolved = resolveTheme({
-            presetId: preset.id,
-            hueShift,
-            warmth,
-            brightness
-          });
-          assert.ok(contrastRatio(resolved.primary, resolved.onPrimary) >= 4.5);
-          assert.ok(contrastRatio(resolved.accent, resolved.onAccent) >= 4.5);
-          assert.ok(contrastRatio(resolved.page, resolved.text) >= 4.5);
-          assert.ok(contrastRatio(resolved.surface, resolved.text) >= 4.5);
-          assert.ok(contrastRatio(resolved.page, resolved.muted) >= 3);
-          assert.ok(contrastRatio(resolved.surface, resolved.muted) >= 3);
-        }
-      }
-    }
+test('both appearance modes keep readable contrast', () => {
+  getThemePresets('light').forEach((preset) => {
+    const resolved = resolveTheme({ presetId: preset.id });
+    assert.ok(contrastRatio(resolved.primary, resolved.onPrimary) >= 4.5);
+    assert.ok(contrastRatio(resolved.accent, resolved.onAccent) >= 4.5);
+    assert.ok(contrastRatio(resolved.page, resolved.text) >= 4.5);
+    assert.ok(contrastRatio(resolved.surface, resolved.text) >= 4.5);
+    assert.ok(contrastRatio(resolved.page, resolved.muted) >= 3);
+    assert.ok(contrastRatio(resolved.surface, resolved.muted) >= 3);
   });
 });

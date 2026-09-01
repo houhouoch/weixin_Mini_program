@@ -27,8 +27,6 @@ const required = [
   'services/theme-store.js',
   'services/ai-entry.js',
   'services/wechat-bill-import.js',
-  'assets/icons/camera.svg',
-  'assets/icons/camera-dark.svg',
   heroPath,
   'README.md'
 ];
@@ -115,7 +113,7 @@ check(
     && pageJs.includes('confirmSmartEntries'),
   '语音识别结果进入同一账单确认流程'
 );
-check(pageJs.includes('wx.chooseMedia') && pageJs.includes('confirmPhotoEntry'), '页面支持拍照或相册记账并在保存前确认');
+check(!pageJs.includes('wx.chooseMedia'), '页面逻辑不包含摄像机或照片选择');
 check(pageJs.includes('parseQuickEntries') && pageJs.includes('saveTransactionDrafts'), '文字与语音支持多笔账单拆分确认');
 check(pageJs.includes('parseEntriesWithAi') && pageJs.includes("showSmartDrafts(entries, options, 'ai')"), '文字与语音优先使用国内函数服务智能整理并进入同一确认层');
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
@@ -145,6 +143,7 @@ check(pageJs.includes('wx.shareFileMessage'), '页面支持直接转发 Excel �
 check(pageJs.includes('wx.saveFileToDisk'), 'PC 端支持保存 Excel 到磁盘');
 
 const wxml = fs.readFileSync(path.join(root, 'pages/index/index.wxml'), 'utf8');
+check(!wxml.includes('handlePhotoEntry') && !wxml.includes('photoReviewVisible'), '首页不提供摄像机或照片记账入口');
 check(wxml.includes('<text class="page-title">今天还能花</text>'), '页面内产品标题保持完整显示');
 check(wxml.includes("reviewPeriod === 'custom'"), '自定义统计只在对应回看模式展示');
 check(wxml.includes('mode="date"') && wxml.includes('reviewRangeStartKey') && wxml.includes('reviewRangeEndKey'), '页面使用原生日期选择器设置统计区间');
@@ -174,7 +173,6 @@ check(wxml.includes('bindtap="handleDetailsMonthChange"')
 check(wxml.includes('bindtap="handleDetailsCalendarDay"')
   && wxml.includes('detailsDayTransactions')
   && pageJs.includes("listTransactions({ dateKey })"), '月历日期可点击并读取当天真实支出');
-check(wxml.includes('本地版本未配置 OCR 服务'), '拍照记账在未配置 OCR 时不伪造识别结果');
 check(wxml.includes('文字与语音会发送至阿里云千问整理'), '页面明示文字与语音的云端处理边界');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
@@ -247,13 +245,8 @@ check(!/--theme-(danger|warning)/.test(themeSource), '用户主题不生成 dang
 check(themeSource.includes("name: '浅色'")
   && themeSource.includes("name: '深色'")
   && !/name: '(海蓝|鼠尾草|暖砂)'/.test(themeSource), '主题只提供 Apple 浅色与深色外观');
-check(wxml.includes("themeResolved.scheme === 'dark' ? '/assets/icons/camera.svg' : '/assets/icons/camera-dark.svg'"), '相机图标随浅色与深色外观切换');
-
 const wxss = fs.readFileSync(path.join(root, 'pages/index/index.wxss'), 'utf8');
-check(/\.minimal-entry__tool-icon\s*\{[^}]*width:\s*40rpx[^}]*height:\s*40rpx[^}]*\}/.test(wxss)
-  && !/\.minimal-entry__tool-icon\s*\{[^}]*background:/.test(wxss), '相机图标不叠加方形背景');
-check(/\.minimal-entry__tool\s*\{[^}]*width:\s*88rpx[^}]*height:\s*88rpx/.test(wxss)
-  && /\.minimal-entry__voice\s*\{[^}]*width:\s*88rpx[^}]*height:\s*88rpx/.test(wxss), '相机与语音入口使用一致的 88rpx 圆形触控区');
+check(/\.minimal-entry__voice\s*\{[^}]*width:\s*88rpx[^}]*height:\s*88rpx/.test(wxss), '语音入口保留 88rpx 圆形触控区');
 check(
   /\.fixed-expense-add\s*\{[^}]*min-height:\s*88rpx/.test(wxss),
   '固定支出新增入口满足 88rpx 触控高度'

@@ -427,15 +427,6 @@ Page({
     ],
     voiceHint: '',
     voiceAvailable: false,
-    photoAmountInput: '',
-    photoCategoryId: 'food',
-    photoCategoryIndex: 0,
-    photoCategoryOptions: categoriesForDirection('expense'),
-    photoError: '',
-    photoNoteInput: '',
-    photoPath: '',
-    photoReviewVisible: false,
-    photoTimeText: formatRecordTime(Date.now(), new Date()).slice(-5),
     sections: {
       composer: false,
       history: false,
@@ -1434,101 +1425,6 @@ Page({
       });
       trackEvent('voice_entry_error', { code: 'start_failed', fallback: 'text' });
     }
-  },
-
-  handlePhotoEntry() {
-    wx.showActionSheet({
-      itemList: ['拍照', '从相册选择'],
-      success: (result) => this.chooseExpensePhoto(result.tapIndex === 0 ? 'camera' : 'album')
-    });
-  },
-
-  async chooseExpensePhoto(sourceType) {
-    if (typeof wx.chooseMedia !== 'function') {
-      this.setData({ photoError: '当前微信版本不支持选择图片，请直接文字记账。' });
-      return;
-    }
-    try {
-      const result = await new Promise((resolve, reject) => {
-        wx.chooseMedia({
-          count: 1,
-          mediaType: ['image'],
-          sizeType: ['compressed'],
-          sourceType: [sourceType],
-          success: resolve,
-          fail: reject
-        });
-      });
-      const file = result.tempFiles && result.tempFiles[0];
-      if (!file || !file.tempFilePath) return;
-      this.setData({
-        photoAmountInput: '',
-        photoCategoryId: 'food',
-        photoCategoryIndex: 0,
-        photoError: '',
-        photoNoteInput: '',
-        photoPath: file.tempFilePath,
-        photoReviewVisible: true,
-        photoTimeText: formatRecordTime(Date.now(), new Date()).slice(-5)
-      });
-      trackEvent('photo_entry_selected', { source: sourceType });
-    } catch (error) {
-      if (error && /cancel/i.test(error.errMsg || '')) return;
-      console.error('选择账单图片失败', error);
-      this.setData({ photoError: '图片没有选好，可以重试或直接文字记账。' });
-    }
-  },
-
-  closePhotoReview() {
-    this.setData({
-      photoAmountInput: '',
-      photoError: '',
-      photoNoteInput: '',
-      photoPath: '',
-      photoReviewVisible: false
-    });
-  },
-
-  handlePhotoAmountInput(event) {
-    this.setData({ photoAmountInput: event.detail.value, photoError: '' });
-  },
-
-  handlePhotoNoteInput(event) {
-    this.setData({ photoNoteInput: event.detail.value.slice(0, 20), photoError: '' });
-  },
-
-  handlePhotoCategory(event) {
-    const photoCategoryIndex = Number(event.detail.value);
-    const category = this.data.photoCategoryOptions[photoCategoryIndex];
-    if (!category) return;
-    this.setData({ photoCategoryId: category.id, photoCategoryIndex });
-  },
-
-  handlePhotoTime(event) {
-    this.setData({ photoTimeText: event.detail.value });
-  },
-
-  async confirmPhotoEntry() {
-    const parsed = parseYuanToCents(this.data.photoAmountInput, {
-      allowZero: false,
-      maxCents: TRANSACTION_MAX_CENTS
-    });
-    if (!parsed.ok) {
-      this.setData({ photoError: parsed.error });
-      return;
-    }
-    const saved = await this.saveTransactionDraft({
-      amountCents: parsed.value,
-      categoryId: this.data.photoCategoryId,
-      direction: 'expense',
-      note: this.data.photoNoteInput,
-      occurredAt: occurredAtForTime(this.data.photoTimeText, new Date())
-    }, 'photo_manual_review');
-    if (!saved.ok) {
-      this.setData({ photoError: saved.error });
-      return;
-    }
-    this.closePhotoReview();
   },
 
   async confirmSmartEntry() {

@@ -3617,24 +3617,8 @@
   margin-left: 20rpx;
 }
 
-.minimal-entry__tool,
 .minimal-entry__voice {
   margin-left: 0 !important;
-}
-
-.minimal-entry__tool {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 44rpx !important;
-  background: var(--theme-control, #F2F2F7) !important;
-}
-
-.minimal-entry__tool-icon {
-  width: 40rpx;
-  height: 40rpx;
 }
 
 .minimal-entry__voice {
@@ -4055,9 +4039,7 @@
 }
 
 .capture-transcript,
-.capture-draft,
-.photo-review__notice,
-.photo-review__form {
+.capture-draft {
   border-radius: 32rpx;
   background: var(--theme-surface, #FFFFFF);
 }
@@ -4250,87 +4232,6 @@
   color: #FFFFFF !important;
 }
 
-.photo-review__image {
-  width: 100%;
-  height: 420rpx;
-  border-radius: 32rpx;
-  background: #E5E5EA;
-}
-
-.photo-review__notice,
-.photo-review__form {
-  margin-top: 20rpx;
-  padding: 28rpx;
-}
-
-.photo-review__notice {
-  display: flex;
-  flex-direction: column;
-}
-
-.photo-review__notice text:first-child {
-  font-size: 28rpx;
-  font-weight: 600;
-  line-height: 40rpx;
-}
-
-.photo-review__notice text:last-child {
-  margin-top: 8rpx;
-  color: var(--theme-muted, #6E6E73);
-  font-size: 22rpx;
-  line-height: 36rpx;
-}
-
-.photo-review__form label {
-  display: flex;
-  flex-direction: column;
-}
-
-.photo-review__form label + label {
-  margin-top: 24rpx;
-  padding-top: 24rpx;
-  border-top: 1rpx solid var(--theme-hairline, rgba(60, 60, 67, 0.12));
-}
-
-.photo-review__form label > text {
-  color: var(--theme-muted, #6E6E73);
-  font-size: 22rpx;
-}
-
-.photo-review__form label > input,
-.photo-review__amount {
-  height: 68rpx;
-  margin-top: 6rpx;
-  color: var(--theme-text, #1D1D1F);
-  font-size: 32rpx;
-  font-weight: 500;
-}
-
-.photo-review__amount {
-  display: flex;
-  align-items: center;
-}
-
-.photo-review__amount input {
-  flex: 1;
-  height: 68rpx;
-  margin-left: 8rpx;
-  font-size: 36rpx;
-  font-weight: 600;
-}
-
-.photo-review__row {
-  display: flex;
-  justify-content: space-between;
-  gap: 20rpx;
-  margin-top: 24rpx;
-  padding-top: 24rpx;
-  border-top: 1rpx solid var(--theme-hairline, rgba(60, 60, 67, 0.12));
-  color: #0A84FF;
-  font-size: 23rpx;
-  line-height: 40rpx;
-}
-
 .default-budget-entry {
   display: flex;
   flex-direction: column;
@@ -4370,7 +4271,6 @@
 
 @media (max-width: 340px) {
   .minimal-entry__actions { gap: 6rpx; margin-left: 12rpx; }
-  .minimal-entry__tool,
   .minimal-entry__voice { width: 88rpx; height: 88rpx; }
   .minimal-analysis__metrics { grid-template-columns: 1fr; }
   .minimal-analysis__metrics > view { padding: 16rpx 0; }

@@ -45,6 +45,54 @@ function metric(label, value) {
   return { label, value };
 }
 
+function compactAmount(cents) {
+  if (!cents) return '';
+  const yuan = cents / 100;
+  if (yuan >= 10000) return `¥${Math.round(yuan / 1000) / 10}k`;
+  return `¥${Number.isInteger(yuan) ? yuan : yuan.toFixed(1)}`;
+}
+
+function buildMonthCalendar(monthKey, dayTotals, now) {
+  const first = parseLocalDateKey(`${monthKey}-01`);
+  const count = daysInMonth(first);
+  const leading = (first.getDay() + 6) % 7;
+  const todayKey = toDateKey(now);
+  const max = Math.max(0, ...Object.keys(dayTotals).map((day) => dayTotals[day]));
+  return Array.from({ length: Math.ceil((leading + count) / 7) * 7 }, (_, index) => {
+    const day = index - leading + 1;
+    if (day < 1 || day > count) {
+      return { key: `blank-${index}`, isBlank: true };
+    }
+    const amountCents = dayTotals[day] || 0;
+    const dateKey = `${monthKey}-${String(day).padStart(2, '0')}`;
+    return {
+      amountCents,
+      amountText: compactAmount(amountCents),
+      day,
+      hasAmount: amountCents > 0,
+      isHigh: max > 0 && amountCents >= max * 0.72,
+      isToday: dateKey === todayKey,
+      key: dateKey
+    };
+  });
+}
+
+function buildDailyTrend(monthKey, dayTotals) {
+  const first = parseLocalDateKey(`${monthKey}-01`);
+  const count = daysInMonth(first);
+  const points = Array.from({ length: count }, (_, index) => ({
+    amountCents: dayTotals[index + 1] || 0,
+    day: index + 1,
+    label: `${index + 1}日`
+  }));
+  const labelDays = Array.from(new Set([1, 8, 15, 22, count]));
+  return {
+    labels: labelDays.map((day) => ({ day, label: `${day}日` })),
+    maxCents: Math.max(0, ...points.map((item) => item.amountCents)),
+    points
+  };
+}
+
 function withBarPercent(items) {
   const max = Math.max(0, ...items.map((item) => item.amountCents));
   return items.map((item) => Object.assign({}, item, {
@@ -249,7 +297,19 @@ function deriveMonthSummary(state, now) {
   const scope = source.baselineCents > 0
     ? `本月总额含启用前汇总 ${formatMetric(source.baselineCents)}，趋势不含该汇总`
     : '本月总额与趋势均来自真实逐笔记录';
-  return summaryShell('month', metrics, chart, insight, scope);
+  const dailyTrend = buildDailyTrend(monthKey, dayTotals);
+  return Object.assign(summaryShell('month', metrics, chart, insight, scope), {
+    analysisMetrics: [
+      metric('最高分类', top ? getCategoryLabel(top.categoryId) : '--'),
+      metric('日均支出', formatMetric(Math.floor(total / Math.max(elapsedDays, 1)))),
+      metric('最高日', highest ? `${highest.day}日 · ${formatMetric(highest.amountCents)}` : '--')
+    ],
+    calendarDays: buildMonthCalendar(monthKey, dayTotals, now),
+    calendarMonthLabel: `${now.getFullYear()}年${now.getMonth() + 1}月`,
+    dailyTrend: dailyTrend.points,
+    trendLabels: dailyTrend.labels,
+    trendMaxText: formatMetric(dailyTrend.maxCents)
+  });
 }
 
 function deriveYearSummary(state, now) {

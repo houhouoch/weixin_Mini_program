@@ -13,6 +13,7 @@ pages/index (展示与交互)
   -> services/wechat-bill-import (账单解析、预览与已有流水去重，Promise)
   -> services/analytics (trackEvent 隐私过滤)
   -> domain/categories (分类白名单与展示名)
+  -> domain/quick-entry (中文数字、多笔语句与外币参考换算纯规则)
   -> domain/budget (纯计算与关联校验)
   -> domain/ledger-workbook (纯 XLSX/ZIP 生成)
   -> domain/wechat-bill (纯 CSV/XLSX 解析、过滤与稳定指纹)
@@ -22,6 +23,8 @@ pages/index (展示与交互)
   -> infrastructure/storage (唯一微信缓存边界)
   -> infrastructure/file-system (小程序用户文件边界)
 ```
+
+Apple 5.0 仍保持单页路由：文字/语音多笔核对与照片核对使用全屏状态层，不新增 tabBar 或后端。`wx.chooseMedia` 只提供相机/相册临时图片；未配置 OCR 服务时进入手动核对回退。月历与每日曲线在 `domain/spending-summary` 中由真实支出流水派生，页面只负责绘制。
 
 交易修改与删除使用 `addTransaction({ action: 'update' | 'delete', transactionId, commandId, ... })`，从而满足交易模块仅暴露两个 API，同时支持当前月和归档纠错。`listTransactions({ dateKey })` 在同一读取 API 内提供按日明细。防重复由页面锁和数据层 `commandId` 幂等共同保证。
 

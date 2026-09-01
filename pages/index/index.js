@@ -21,7 +21,7 @@ const {
   formatCents,
   parseYuanToCents
 } = require('../../domain/money');
-const { parseQuickEntry } = require('../../domain/quick-entry');
+const { parseQuickEntries } = require('../../domain/quick-entry');
 const budgetStore = require('../../services/budget-store');
 const {
   createDataBackup,
@@ -235,6 +235,31 @@ function toTransactionView(item, now) {
   };
 }
 
+function toSmartDraft(item, index) {
+  const categoryOptions = categoriesForDirection(item.direction);
+  const categoryIndex = Math.max(0, categoryOptions.findIndex((category) => category.id === item.categoryId));
+  return Object.assign({}, item, {
+    amountInput: item.amountText,
+    categoryIndex,
+    categoryOptions,
+    id: `smart-draft-${index}`,
+    selected: true,
+    timeText: item.timeText || formatRecordTime(Date.now(), new Date()).slice(-5)
+  });
+}
+
+function occurredAtForTime(timeText, now) {
+  const match = String(timeText || '').match(/^(\d{2}):(\d{2})$/);
+  if (!match) return now.getTime();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    Number(match[1]),
+    Number(match[2])
+  ).getTime();
+}
+
 const INITIAL_THEME = resolveTheme(DEFAULT_THEME_SETTINGS);
 const INITIAL_NOW = new Date();
 const INITIAL_DATE_KEY = toDateKey(INITIAL_NOW);
@@ -275,7 +300,7 @@ Page({
     cycleStartDays: CYCLE_START_DAYS,
     cycleStartDayIndex: 0,
     dateLabel: '',
-    detailsAnalysisVisible: false,
+    detailsAnalysisVisible: true,
     detailsError: '',
     detailsExpenseText: '0.00',
     detailsIncomeText: '0.00',
@@ -315,6 +340,7 @@ Page({
     isSaving: false,
     isTemplateSaving: false,
     isVoiceRecording: false,
+    calendarWeekdays: ['一', '二', '三', '四', '五', '六', '日'],
     legacyHistoricalSpentText: '',
     quickTemplates: [],
     recentTransactions: [],
@@ -329,7 +355,7 @@ Page({
     reviewDetailError: '',
     reviewDetailLoading: false,
     reviewDetailVisible: false,
-    reviewPeriod: 'day',
+    reviewPeriod: 'month',
     reviewPeriods: REVIEW_PERIODS,
     reviewRangeEndKey: INITIAL_DATE_KEY,
     reviewRangeMaxKey: INITIAL_DATE_KEY,
@@ -343,6 +369,10 @@ Page({
     smartEntryError: '',
     smartEntryInput: '',
     smartEntryParsed: null,
+    smartEntryDrafts: [],
+    smartEntrySource: 'text',
+    smartReviewVisible: false,
+    smartSelectedCount: 0,
     smartExamples: [
       { id: 'coffee', label: '咖啡 20' },
       { id: 'metro', label: '地铁 4' },
@@ -350,6 +380,15 @@ Page({
     ],
     voiceHint: '',
     voiceAvailable: false,
+    photoAmountInput: '',
+    photoCategoryId: 'food',
+    photoCategoryIndex: 0,
+    photoCategoryOptions: categoriesForDirection('expense'),
+    photoError: '',
+    photoNoteInput: '',
+    photoPath: '',
+    photoReviewVisible: false,
+    photoTimeText: formatRecordTime(Date.now(), new Date()).slice(-5),
     sections: {
       composer: false,
       history: false,
@@ -423,6 +462,8 @@ Page({
           isVoiceRecording: true,
           smartEntryError: '',
           smartEntryParsed: null,
+          smartEntryDrafts: [],
+          smartReviewVisible: false,
           voiceHint: '正在听…说完后再点一次麦克风。'
         });
         trackEvent('voice_entry_started');
@@ -433,7 +474,8 @@ Page({
         this.setData({
           smartEntryError: '',
           smartEntryInput: text,
-          smartEntryParsed: null
+          smartEntryParsed: null,
+          smartEntryDrafts: []
         });
       };
       manager.onStop = (result) => {
@@ -452,8 +494,10 @@ Page({
           smartEntryError: '',
           smartEntryInput: text,
           smartEntryParsed: null,
+          smartEntryDrafts: [],
+          smartEntrySource: 'voice',
           voiceHint: `已识别“${text}”，请确认账单。`
-        }, () => this.handleSmartSubmit({ keepVoiceHint: true }));
+        }, () => this.handleSmartSubmit({ keepVoiceHint: true, source: 'voice' }));
         trackEvent('voice_entry_recognized');
       };
       manager.onError = (error) => {
@@ -652,7 +696,10 @@ Page({
     const activeTab = event.currentTarget.dataset.tab;
     if (!['home', 'details', 'settings'].includes(activeTab)) return;
     this.setData({ activeTab }, () => {
-      if (activeTab === 'details') this.refreshDetails(new Date());
+      if (activeTab === 'details') {
+        this.refreshDetails(new Date());
+        if (this.data.detailsAnalysisVisible) this.refreshReview(new Date());
+      }
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
       }
@@ -662,6 +709,7 @@ Page({
   showAllTransactions() {
     this.setData({ activeTab: 'details' }, () => {
       this.refreshDetails(new Date());
+      if (this.data.detailsAnalysisVisible) this.refreshReview(new Date());
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
       }
@@ -755,7 +803,11 @@ Page({
           reviewTransactions: []
         });
       }
-      this.setData(nextReviewData);
+      this.setData(nextReviewData, () => {
+        if (reviewSummary.period === 'month' && this.data.activeTab === 'details') {
+          this.drawMonthlyTrend(reviewSummary);
+        }
+      });
     } catch (error) {
       if (requestId !== this._reviewReadId) return;
       console.error('读取消费回看失败', error);
@@ -763,6 +815,80 @@ Page({
     } finally {
       if (requestId === this._reviewReadId) this.setData({ reviewLoading: false });
     }
+  },
+
+  drawMonthlyTrend(summary) {
+    const points = summary && summary.dailyTrend || [];
+    if (!points.length || typeof this.createSelectorQuery !== 'function') return;
+    wx.nextTick(() => {
+      this.createSelectorQuery()
+        .select('#monthlyTrendCanvas')
+        .fields({ node: true, size: true })
+        .exec((result) => {
+          const target = result && result[0];
+          if (!target || !target.node || !target.width || !target.height) return;
+          const canvas = target.node;
+          const context = canvas.getContext('2d');
+          const pixelRatio = typeof wx.getWindowInfo === 'function'
+            ? wx.getWindowInfo().pixelRatio
+            : 2;
+          canvas.width = target.width * pixelRatio;
+          canvas.height = target.height * pixelRatio;
+          context.scale(pixelRatio, pixelRatio);
+          const width = target.width;
+          const height = target.height;
+          const padX = 8;
+          const padTop = 18;
+          const padBottom = 18;
+          const max = Math.max(1, ...points.map((item) => item.amountCents));
+          const coordinates = points.map((item, index) => ({
+            x: padX + index * (width - padX * 2) / Math.max(points.length - 1, 1),
+            y: padTop + (1 - item.amountCents / max) * (height - padTop - padBottom)
+          }));
+          context.clearRect(0, 0, width, height);
+          context.beginPath();
+          context.moveTo(coordinates[0].x, coordinates[0].y);
+          for (let index = 1; index < coordinates.length - 1; index += 1) {
+            const current = coordinates[index];
+            const next = coordinates[index + 1];
+            context.quadraticCurveTo(
+              current.x,
+              current.y,
+              (current.x + next.x) / 2,
+              (current.y + next.y) / 2
+            );
+          }
+          const last = coordinates[coordinates.length - 1];
+          context.lineTo(last.x, last.y);
+          const gradient = context.createLinearGradient(0, padTop, 0, height);
+          gradient.addColorStop(0, 'rgba(10,132,255,0.24)');
+          gradient.addColorStop(1, 'rgba(10,132,255,0)');
+          context.lineTo(last.x, height);
+          context.lineTo(coordinates[0].x, height);
+          context.closePath();
+          context.fillStyle = gradient;
+          context.fill();
+
+          context.beginPath();
+          context.moveTo(coordinates[0].x, coordinates[0].y);
+          for (let index = 1; index < coordinates.length - 1; index += 1) {
+            const current = coordinates[index];
+            const next = coordinates[index + 1];
+            context.quadraticCurveTo(
+              current.x,
+              current.y,
+              (current.x + next.x) / 2,
+              (current.y + next.y) / 2
+            );
+          }
+          context.lineTo(last.x, last.y);
+          context.strokeStyle = '#0A84FF';
+          context.lineWidth = 2.5;
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.stroke();
+        });
+    });
   },
 
   handleReviewPeriod(event) {
@@ -927,19 +1053,31 @@ Page({
       smartEntryError: '',
       smartEntryInput: event.detail.value,
       smartEntryParsed: null,
+      smartEntryDrafts: [],
+      smartReviewVisible: false,
       voiceHint: ''
     });
   },
 
   handleSmartSubmit(options) {
-    const parsed = parseQuickEntry(this.data.smartEntryInput);
+    const parsed = parseQuickEntries(this.data.smartEntryInput);
     if (!parsed.ok) {
-      this.setData({ smartEntryError: parsed.error, smartEntryParsed: null });
+      this.setData({
+        smartEntryError: parsed.error,
+        smartEntryParsed: null,
+        smartEntryDrafts: [],
+        smartReviewVisible: false
+      });
       return;
     }
+    const smartEntryDrafts = parsed.value.map(toSmartDraft);
     this.setData({
       smartEntryError: '',
-      smartEntryParsed: parsed.value,
+      smartEntryDrafts,
+      smartEntryParsed: smartEntryDrafts[0],
+      smartEntrySource: options && options.source === 'voice' ? 'voice' : 'text',
+      smartReviewVisible: true,
+      smartSelectedCount: smartEntryDrafts.length,
       voiceHint: options && options.keepVoiceHint ? this.data.voiceHint : ''
     });
     wx.hideKeyboard();
@@ -951,7 +1089,105 @@ Page({
   },
 
   retrySmartEntry() {
-    this.setData({ smartEntryError: '', smartEntryParsed: null, voiceHint: '' });
+    this.setData({
+      smartEntryError: '',
+      smartEntryDrafts: [],
+      smartEntryParsed: null,
+      smartReviewVisible: false,
+      smartSelectedCount: 0,
+      voiceHint: ''
+    });
+  },
+
+  handleSmartTranscriptInput(event) {
+    this.setData({ smartEntryInput: event.detail.value, smartEntryError: '' });
+  },
+
+  reparseSmartTranscript() {
+    this.handleSmartSubmit({
+      keepVoiceHint: this.data.smartEntrySource === 'voice',
+      source: this.data.smartEntrySource
+    });
+  },
+
+  toggleSmartDraft(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const drafts = this.data.smartEntryDrafts.map((item, itemIndex) => itemIndex === index
+      ? Object.assign({}, item, { selected: !item.selected })
+      : item);
+    this.setData({
+      smartEntryDrafts: drafts,
+      smartSelectedCount: drafts.filter((item) => item.selected).length
+    });
+  },
+
+  handleSmartDraftNote(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    this.setData({ [`smartEntryDrafts[${index}].note`]: event.detail.value.slice(0, 20) });
+  },
+
+  handleSmartDraftAmount(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    this.setData({
+      [`smartEntryDrafts[${index}].amountInput`]: event.detail.value,
+      smartEntryError: ''
+    });
+  },
+
+  handleSmartDraftCategory(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const categoryIndex = Number(event.detail.value);
+    const draft = this.data.smartEntryDrafts[index];
+    const category = draft && draft.categoryOptions[categoryIndex];
+    if (!category) return;
+    this.setData({
+      [`smartEntryDrafts[${index}].categoryId`]: category.id,
+      [`smartEntryDrafts[${index}].categoryLabel`]: category.label,
+      [`smartEntryDrafts[${index}].categoryIndex`]: categoryIndex
+    });
+  },
+
+  handleSmartDraftTime(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    this.setData({ [`smartEntryDrafts[${index}].timeText`]: event.detail.value });
+  },
+
+  async confirmSmartEntries() {
+    const selected = this.data.smartEntryDrafts.filter((item) => item.selected);
+    if (!selected.length) {
+      this.setData({ smartEntryError: '请至少选择一笔账单。' });
+      return;
+    }
+    const now = new Date();
+    const drafts = [];
+    for (const item of selected) {
+      const parsed = parseYuanToCents(item.amountInput, {
+        allowZero: false,
+        maxCents: TRANSACTION_MAX_CENTS
+      });
+      if (!parsed.ok) {
+        this.setData({ smartEntryError: `${item.note || item.categoryLabel}：${parsed.error}` });
+        return;
+      }
+      drafts.push(Object.assign({}, item, {
+        amountCents: parsed.value,
+        occurredAt: occurredAtForTime(item.timeText, now)
+      }));
+    }
+    const saved = await this.saveTransactionDrafts(drafts, `smart_${this.data.smartEntrySource}`);
+    if (!saved.ok) {
+      this.setData({ smartEntryError: saved.error });
+      return;
+    }
+    this.setData({
+      smartEntryDrafts: [],
+      smartEntryError: '',
+      smartEntryInput: '',
+      smartEntryParsed: null,
+      smartReviewVisible: false,
+      smartSelectedCount: 0,
+      voiceHint: ''
+    });
   },
 
   handleVoiceEntry() {
@@ -991,23 +1227,107 @@ Page({
     }
   },
 
+  handlePhotoEntry() {
+    wx.showActionSheet({
+      itemList: ['拍照', '从相册选择'],
+      success: (result) => this.chooseExpensePhoto(result.tapIndex === 0 ? 'camera' : 'album')
+    });
+  },
+
+  async chooseExpensePhoto(sourceType) {
+    if (typeof wx.chooseMedia !== 'function') {
+      this.setData({ photoError: '当前微信版本不支持选择图片，请直接文字记账。' });
+      return;
+    }
+    try {
+      const result = await new Promise((resolve, reject) => {
+        wx.chooseMedia({
+          count: 1,
+          mediaType: ['image'],
+          sizeType: ['compressed'],
+          sourceType: [sourceType],
+          success: resolve,
+          fail: reject
+        });
+      });
+      const file = result.tempFiles && result.tempFiles[0];
+      if (!file || !file.tempFilePath) return;
+      this.setData({
+        photoAmountInput: '',
+        photoCategoryId: 'food',
+        photoCategoryIndex: 0,
+        photoError: '',
+        photoNoteInput: '',
+        photoPath: file.tempFilePath,
+        photoReviewVisible: true,
+        photoTimeText: formatRecordTime(Date.now(), new Date()).slice(-5)
+      });
+      trackEvent('photo_entry_selected', { source: sourceType });
+    } catch (error) {
+      if (error && /cancel/i.test(error.errMsg || '')) return;
+      console.error('选择账单图片失败', error);
+      this.setData({ photoError: '图片没有选好，可以重试或直接文字记账。' });
+    }
+  },
+
+  closePhotoReview() {
+    this.setData({
+      photoAmountInput: '',
+      photoError: '',
+      photoNoteInput: '',
+      photoPath: '',
+      photoReviewVisible: false
+    });
+  },
+
+  handlePhotoAmountInput(event) {
+    this.setData({ photoAmountInput: event.detail.value, photoError: '' });
+  },
+
+  handlePhotoNoteInput(event) {
+    this.setData({ photoNoteInput: event.detail.value.slice(0, 20), photoError: '' });
+  },
+
+  handlePhotoCategory(event) {
+    const photoCategoryIndex = Number(event.detail.value);
+    const category = this.data.photoCategoryOptions[photoCategoryIndex];
+    if (!category) return;
+    this.setData({ photoCategoryId: category.id, photoCategoryIndex });
+  },
+
+  handlePhotoTime(event) {
+    this.setData({ photoTimeText: event.detail.value });
+  },
+
+  async confirmPhotoEntry() {
+    const parsed = parseYuanToCents(this.data.photoAmountInput, {
+      allowZero: false,
+      maxCents: TRANSACTION_MAX_CENTS
+    });
+    if (!parsed.ok) {
+      this.setData({ photoError: parsed.error });
+      return;
+    }
+    const saved = await this.saveTransactionDraft({
+      amountCents: parsed.value,
+      categoryId: this.data.photoCategoryId,
+      direction: 'expense',
+      note: this.data.photoNoteInput,
+      occurredAt: occurredAtForTime(this.data.photoTimeText, new Date())
+    }, 'photo_manual_review');
+    if (!saved.ok) {
+      this.setData({ photoError: saved.error });
+      return;
+    }
+    this.closePhotoReview();
+  },
+
   async confirmSmartEntry() {
-    const draft = this.data.smartEntryParsed;
-    if (!draft) {
+    if (!this.data.smartEntryDrafts.length) {
       this.handleSmartSubmit();
       return;
     }
-    const saved = await this.saveTransactionDraft(draft, 'smart_text');
-    if (!saved.ok) {
-      this.setData({ smartEntryError: saved.error });
-      return;
-    }
-    this.setData({
-      smartEntryError: '',
-      smartEntryInput: '',
-      smartEntryParsed: null,
-      voiceHint: ''
-    });
+    await this.confirmSmartEntries();
   },
 
   handleAmountInput(event) {
@@ -1039,6 +1359,47 @@ Page({
     this.setData({ noteInput: event.detail.value, feedback: '' });
   },
 
+  async saveTransactionDrafts(drafts, entry) {
+    if (this._transactionInFlight || this.data.isSaving) {
+      return { ok: false, error: '正在保存，请稍候。' };
+    }
+    this._transactionInFlight = true;
+    this.setData({ isSaving: true, inputError: '', feedback: '' });
+    try {
+      let duplicateCount = 0;
+      for (const draft of drafts) {
+        const result = await addTransaction({
+          action: 'create',
+          amountCents: draft.amountCents,
+          categoryId: draft.categoryId,
+          commandId: commandId('create'),
+          direction: draft.direction,
+          note: draft.note,
+          occurredAt: draft.occurredAt || Date.now()
+        });
+        if (result.duplicate) duplicateCount += 1;
+      }
+      await this.refreshAfterMutation();
+      this.setData({
+        feedback: duplicateCount === drafts.length
+          ? '这些记录已经保存过了。'
+          : `已记下 ${drafts.length - duplicateCount} 笔，今日额度已更新。`
+      });
+      trackEvent('transaction_batch_saved', {
+        count: drafts.length,
+        entry: entry || 'smart_text',
+        result: duplicateCount ? 'partial_duplicate' : 'success'
+      });
+      return { ok: true, duplicateCount };
+    } catch (error) {
+      console.error('批量保存交易失败', error);
+      return { ok: false, error: '保存失败，请重试' };
+    } finally {
+      this._transactionInFlight = false;
+      this.setData({ isSaving: false });
+    }
+  },
+
   async saveTransactionDraft(draft, entry) {
     if (this._transactionInFlight || this.data.isSaving) {
       return { ok: false, error: '正在保存，请稍候。' };
@@ -1056,7 +1417,7 @@ Page({
         commandId: commandId('create'),
         direction,
         note: draft.note,
-        occurredAt: now.getTime()
+        occurredAt: draft.occurredAt || now.getTime()
       });
       await this.refreshAfterMutation();
       this.setData({
@@ -1408,6 +1769,26 @@ Page({
   closeDrawer() {
     if (this.data.drawerMode === 'first') return;
     this.setData({ drawerVisible: false, formErrors: Object.assign({}, EMPTY_ERRORS) });
+  },
+
+  useDefaultBudget() {
+    if (this._budgetSaveInFlight || this.data.isBudgetSaving) return;
+    const defaults = {
+      income: '8000',
+      fixedExpense: '800',
+      fixedExpenseMode: 'manual',
+      manualFixedExpense: '800',
+      savingGoal: '2000',
+      cycleStartDay: 1,
+      fixedExpenseItems: []
+    };
+    this.setData(Object.assign({
+      cycleStartDayIndex: 0,
+      formErrors: Object.assign({}, EMPTY_ERRORS)
+    }, fixedExpenseDraftState(defaults)), () => {
+      trackEvent('default_budget_selected', { entry: 'first_setup' });
+      this.saveBudgetForm();
+    });
   },
 
   openThemeDrawer() {

@@ -15,11 +15,6 @@
       "provider": "wx069ba97219f66d99"
     }
   },
-  "permission": {
-    "scope.record": {
-      "desc": "用于将你主动录制的账单语音转换为文字"
-    }
-  },
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
 }

@@ -79,12 +79,7 @@ check(
     && appConfig.plugins.WechatSI.provider === 'wx069ba97219f66d99',
   '接入微信官方语音识别插件'
 );
-check(
-  appConfig.permission
-    && appConfig.permission['scope.record']
-    && appConfig.permission['scope.record'].desc.includes('账单语音'),
-  '麦克风权限说明仅用于用户主动发起的账单语音识别'
-);
+check(!Object.prototype.hasOwnProperty.call(appConfig, 'permission'), 'app.json 不误用仅用于位置声明的 permission 字段');
 
 const indexPageConfig = JSON.parse(
   fs.readFileSync(path.join(root, 'pages/index/index.json'), 'utf8')
@@ -112,9 +107,12 @@ check(pageJs.includes('wx.showShareMenu'), '开启微信分享菜单');
 check(
   pageJs.includes("requirePlugin('WechatSI')")
     && pageJs.includes('getRecordRecognitionManager')
-    && pageJs.includes('handleSmartSubmit({ keepVoiceHint: true })'),
+    && pageJs.includes("source: 'voice'")
+    && pageJs.includes('confirmSmartEntries'),
   '语音识别结果进入同一账单确认流程'
 );
+check(pageJs.includes('wx.chooseMedia') && pageJs.includes('confirmPhotoEntry'), '页面支持拍照或相册记账并在保存前确认');
+check(pageJs.includes('parseQuickEntries') && pageJs.includes('saveTransactionDrafts'), '文字与语音支持多笔账单拆分确认');
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
 check(pageJs.includes('onShareTimeline'), '实现朋友圈分享生命周期');
 check(pageJs.includes("path: '/pages/index/index?from=share'"), '分享路径只包含来源标记');
@@ -162,6 +160,9 @@ check(wxml.includes('修改收支明细'), '页面提供交易修改抽屉');
 check(wxml.includes('data-direction="income"') && wxml.includes('记下收入'), '页面提供额外收入入口');
 check(wxml.includes('固定收入无需重复记录'), '收入入口提示避免重复记录固定收入');
 check(wxml.includes('已扣除储蓄目标 ¥{{budgetSavingGoalText}}'), '首页明确显示扣除储蓄目标后的周期省下金额');
+check(pageJs.includes("income: '8000'") && pageJs.includes("fixedExpense: '800'") && pageJs.includes("savingGoal: '2000'") && wxml.includes('bindtap="useDefaultBudget"'), '首次设置可使用 8000/800/2000 示例预算先进入首页');
+check(wxml.includes('reviewSummary.calendarDays') && wxml.includes('monthlyTrendCanvas'), '支出分析展示每日金额日历和走势曲线');
+check(wxml.includes('本地版本未配置 OCR 服务'), '拍照记账在未配置 OCR 时不伪造识别结果');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');

@@ -39,7 +39,7 @@
               type="text"
               value="{{smartEntryInput}}"
               placeholder="咖啡 20"
-              maxlength="40"
+              maxlength="240"
               bindinput="handleSmartInput"
               bindconfirm="handleSmartSubmit"
               confirm-type="done"
@@ -47,9 +47,14 @@
             />
             <text class="minimal-entry__hint" data-direction="income">这笔花在哪儿？也可记下收入</text>
           </view>
-          <button class="minimal-entry__voice {{isVoiceRecording ? 'minimal-entry__voice--active' : ''}}" bindtap="handleVoiceEntry" aria-label="{{isVoiceRecording ? '结束语音输入' : '开始语音输入'}}">
-            <image class="minimal-entry__voice-icon" src="/assets/icons/microphone.svg" mode="aspectFit" />
-          </button>
+          <view class="minimal-entry__actions">
+            <button class="minimal-entry__tool" bindtap="handlePhotoEntry" aria-label="拍照或从相册记账">
+              <image class="minimal-entry__tool-icon" src="/assets/icons/camera.svg" mode="aspectFit" />
+            </button>
+            <button class="minimal-entry__voice {{isVoiceRecording ? 'minimal-entry__voice--active' : ''}}" bindtap="handleVoiceEntry" aria-label="{{isVoiceRecording ? '结束语音输入' : '开始语音输入'}}">
+              <image class="minimal-entry__voice-icon" src="/assets/icons/microphone.svg" mode="aspectFit" />
+            </button>
+          </view>
         </view>
         <button
           wx:if="{{smartEntryInput && !smartEntryParsed}}"
@@ -115,6 +120,55 @@
         <text class="minimal-summary__income" wx:if="{{detailsIncomeText !== '0.00'}}">同期收入 +¥{{detailsIncomeText}}</text>
       </view>
 
+      <view class="minimal-analysis-heading">
+        <view>
+          <text class="minimal-section-title">支出分析</text>
+          <text class="minimal-analysis-heading__copy">每天花了多少，一眼看清</text>
+        </view>
+        <button class="minimal-link" bindtap="toggleDetailsAnalysis">{{detailsAnalysisVisible ? '收起' : '展开'}}</button>
+      </view>
+      <view class="minimal-analysis" wx:if="{{detailsAnalysisVisible}}">
+        <view class="minimal-state-inline" wx:if="{{reviewLoading}}">正在整理支出…</view>
+        <view class="minimal-state-inline minimal-state-inline--error" wx:elif="{{reviewError}}">{{reviewError}}</view>
+        <block wx:elif="{{reviewSummary}}">
+          <view class="minimal-analysis__metrics">
+            <view wx:for="{{reviewSummary.analysisMetrics || reviewSummary.metrics}}" wx:key="label">
+              <text>{{item.label}}</text>
+              <text>{{item.value}}</text>
+            </view>
+          </view>
+          <view class="spending-calendar" wx:if="{{reviewSummary.period === 'month'}}">
+            <view class="spending-calendar__heading">
+              <text>{{reviewSummary.calendarMonthLabel}}</text>
+              <text>每日支出</text>
+            </view>
+            <view class="spending-calendar__weekdays">
+              <text wx:for="{{calendarWeekdays}}" wx:key="*this">{{item}}</text>
+            </view>
+            <view class="spending-calendar__grid">
+              <view class="spending-calendar__day {{item.isBlank ? 'spending-calendar__day--blank' : ''}} {{item.isToday ? 'spending-calendar__day--today' : ''}} {{item.isHigh ? 'spending-calendar__day--high' : ''}}" wx:for="{{reviewSummary.calendarDays}}" wx:key="key">
+                <text class="spending-calendar__date" wx:if="{{!item.isBlank}}">{{item.day}}</text>
+                <text class="spending-calendar__amount" wx:if="{{item.hasAmount}}">{{item.amountText}}</text>
+              </view>
+            </view>
+          </view>
+          <view class="spending-trend" wx:if="{{reviewSummary.period === 'month'}}">
+            <view class="spending-trend__heading">
+              <view>
+                <text class="spending-trend__title">每日走势</text>
+                <text class="spending-trend__copy">曲线越高，当天支出越多</text>
+              </view>
+              <text class="spending-trend__max">最高 {{reviewSummary.trendMaxText}}</text>
+            </view>
+            <canvas type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="本月每日支出走势曲线" />
+            <view class="spending-trend__labels">
+              <text wx:for="{{reviewSummary.trendLabels}}" wx:key="day">{{item.label}}</text>
+            </view>
+          </view>
+          <text class="minimal-analysis__insight">{{reviewSummary.scopeText}}</text>
+        </block>
+      </view>
+
       <view class="minimal-details-heading">
         <text class="minimal-section-title">账单记录</text>
         <text class="minimal-details-heading__hint">点“修改”可纠正记录</text>
@@ -136,21 +190,6 @@
             </view>
           </view>
         </view>
-      </view>
-
-      <button class="minimal-analysis-toggle" bindtap="toggleDetailsAnalysis">{{detailsAnalysisVisible ? '收起支出分析' : '查看支出分析'}}</button>
-      <view class="minimal-analysis" wx:if="{{detailsAnalysisVisible}}">
-        <view class="minimal-state-inline" wx:if="{{reviewLoading}}">正在整理支出…</view>
-        <view class="minimal-state-inline minimal-state-inline--error" wx:elif="{{reviewError}}">{{reviewError}}</view>
-        <block wx:elif="{{reviewSummary}}">
-          <view class="minimal-analysis__metrics">
-            <view wx:for="{{reviewSummary.metrics}}" wx:key="label">
-              <text>{{item.label}}</text>
-              <text>{{item.value}}</text>
-            </view>
-          </view>
-          <text class="minimal-analysis__insight">{{reviewSummary.insightText}}</text>
-        </block>
       </view>
 
       <view class="minimal-tool-card" wx:if="{{billImportPreview}}">
@@ -256,9 +295,109 @@
     </view>
 
     <view class="minimal-tabbar" role="tablist" aria-label="页面导航">
-      <button class="minimal-tabbar__item {{activeTab === 'home' ? 'minimal-tabbar__item--active' : ''}}" data-tab="home" bindtap="switchTab">首页</button>
-      <button class="minimal-tabbar__item {{activeTab === 'details' ? 'minimal-tabbar__item--active' : ''}}" data-tab="details" bindtap="switchTab">明细</button>
-      <button class="minimal-tabbar__item {{activeTab === 'settings' ? 'minimal-tabbar__item--active' : ''}}" data-tab="settings" bindtap="switchTab">设置</button>
+      <button class="minimal-tabbar__item {{activeTab === 'home' ? 'minimal-tabbar__item--active' : ''}}" data-tab="home" bindtap="switchTab">
+        <image class="minimal-tabbar__icon" src="{{activeTab === 'home' ? '/assets/icons/home-active.svg' : '/assets/icons/home.svg'}}" mode="aspectFit" />
+        <text>今日</text>
+      </button>
+      <button class="minimal-tabbar__item {{activeTab === 'details' ? 'minimal-tabbar__item--active' : ''}}" data-tab="details" bindtap="switchTab">
+        <image class="minimal-tabbar__icon" src="{{activeTab === 'details' ? '/assets/icons/ledger-active.svg' : '/assets/icons/ledger.svg'}}" mode="aspectFit" />
+        <text>账单</text>
+      </button>
+      <button class="minimal-tabbar__item {{activeTab === 'settings' ? 'minimal-tabbar__item--active' : ''}}" data-tab="settings" bindtap="switchTab">
+        <image class="minimal-tabbar__icon" src="{{activeTab === 'settings' ? '/assets/icons/sliders-active.svg' : '/assets/icons/sliders.svg'}}" mode="aspectFit" />
+        <text>设置</text>
+      </button>
+    </view>
+
+    <view class="capture-sheet" wx:if="{{smartReviewVisible}}">
+      <view class="capture-sheet__header">
+        <button class="capture-sheet__back" bindtap="retrySmartEntry" aria-label="返回">‹</button>
+        <view>
+          <text class="capture-sheet__title">确认账单</text>
+          <text class="capture-sheet__subtitle">{{smartEntrySource === 'voice' ? '语音已转写' : '文字已解析'}}，确认后才记入账本</text>
+        </view>
+      </view>
+      <scroll-view class="capture-sheet__scroll" scroll-y enhanced>
+        <view class="capture-transcript">
+          <view class="capture-transcript__heading">
+            <image src="/assets/icons/microphone-dark.svg" mode="aspectFit" />
+            <text>识别原文</text>
+            <button bindtap="reparseSmartTranscript">重新识别</button>
+          </view>
+          <textarea class="capture-transcript__input" value="{{smartEntryInput}}" maxlength="240" auto-height bindinput="handleSmartTranscriptInput" />
+        </view>
+        <view class="capture-sheet__section-heading">
+          <text>识别到 {{smartEntryDrafts.length}} 笔</text>
+          <text>金额、分类和时间均可修改</text>
+        </view>
+        <view class="capture-draft {{item.selected ? '' : 'capture-draft--off'}}" wx:for="{{smartEntryDrafts}}" wx:key="id">
+          <button class="capture-draft__check {{item.selected ? 'capture-draft__check--on' : ''}}" data-index="{{index}}" bindtap="toggleSmartDraft" aria-label="{{item.selected ? '不记入这笔' : '记入这笔'}}">{{item.selected ? '✓' : ''}}</button>
+          <view class="capture-draft__body">
+            <input class="capture-draft__note" value="{{item.note}}" maxlength="20" data-index="{{index}}" bindinput="handleSmartDraftNote" />
+            <view class="capture-draft__meta">
+              <picker range="{{item.categoryOptions}}" range-key="label" value="{{item.categoryIndex}}" data-index="{{index}}" bindchange="handleSmartDraftCategory">
+                <text>{{item.categoryLabel}} ›</text>
+              </picker>
+              <picker mode="time" value="{{item.timeText}}" data-index="{{index}}" bindchange="handleSmartDraftTime">
+                <text>今天 {{item.timeText}} ›</text>
+              </picker>
+            </view>
+            <text class="capture-draft__conversion" wx:if="{{item.sourceCurrency === 'USD'}}">{{item.sourceAmountText}} · 按参考汇率 {{item.referenceRate}} 换算</text>
+          </view>
+          <view class="capture-draft__amount">
+            <text>¥</text>
+            <input type="digit" value="{{item.amountInput}}" data-index="{{index}}" bindinput="handleSmartDraftAmount" />
+          </view>
+        </view>
+        <view class="capture-note">识别结果不会自动记账。外币换算值可在保存前修改。</view>
+        <text class="capture-error" wx:if="{{smartEntryError}}">{{smartEntryError}}</text>
+        <view class="capture-sheet__bottom-space"></view>
+      </scroll-view>
+      <view class="capture-actions">
+        <button class="capture-actions__secondary" bindtap="retrySmartEntry">重新输入</button>
+        <button class="capture-actions__primary" bindtap="confirmSmartEntries" loading="{{isSaving}}" disabled="{{isSaving || smartSelectedCount === 0}}">确认记入 {{smartSelectedCount}} 笔</button>
+      </view>
+    </view>
+
+    <view class="capture-sheet" wx:if="{{photoReviewVisible}}">
+      <view class="capture-sheet__header">
+        <button class="capture-sheet__back" bindtap="closePhotoReview" aria-label="返回">‹</button>
+        <view>
+          <text class="capture-sheet__title">核对照片账单</text>
+          <text class="capture-sheet__subtitle">图片仅在当前设备预览，不会上传</text>
+        </view>
+      </view>
+      <scroll-view class="capture-sheet__scroll" scroll-y enhanced>
+        <image class="photo-review__image" src="{{photoPath}}" mode="aspectFill" />
+        <view class="photo-review__notice">
+          <text>请手动核对</text>
+          <text>本地版本未配置 OCR 服务，不会伪造识别结果。食物照可判断类别，但不能凭照片知道实付金额。</text>
+        </view>
+        <view class="photo-review__form">
+          <label>
+            <text>金额</text>
+            <view class="photo-review__amount"><text>¥</text><input type="digit" value="{{photoAmountInput}}" placeholder="0.00" bindinput="handlePhotoAmountInput" /></view>
+          </label>
+          <label>
+            <text>用途</text>
+            <input value="{{photoNoteInput}}" maxlength="20" placeholder="例如：午餐" bindinput="handlePhotoNoteInput" />
+          </label>
+          <view class="photo-review__row">
+            <picker range="{{photoCategoryOptions}}" range-key="label" value="{{photoCategoryIndex}}" bindchange="handlePhotoCategory">
+              <text>分类 · {{photoCategoryOptions[photoCategoryIndex].label}} ›</text>
+            </picker>
+            <picker mode="time" value="{{photoTimeText}}" bindchange="handlePhotoTime">
+              <text>今天 {{photoTimeText}} ›</text>
+            </picker>
+          </view>
+        </view>
+        <text class="capture-error" wx:if="{{photoError}}">{{photoError}}</text>
+        <view class="capture-sheet__bottom-space"></view>
+      </scroll-view>
+      <view class="capture-actions">
+        <button class="capture-actions__secondary" bindtap="handlePhotoEntry">重新选择</button>
+        <button class="capture-actions__primary" bindtap="confirmPhotoEntry" loading="{{isSaving}}" disabled="{{isSaving}}">确认记入</button>
+      </view>
     </view>
   </block>
 </view>
@@ -1073,6 +1212,12 @@
         disabled="{{isBudgetSaving}}"
         loading="{{isBudgetSaving}}"
       >{{isBudgetSaving ? '保存中…' : '保存并查看结果'}}</button>
+
+      <view class="default-budget-entry" wx:if="{{drawerMode === 'first'}}">
+        <text>还不想填？可以先看看完整页面。</text>
+        <button bindtap="useDefaultBudget" disabled="{{isBudgetSaving}}">先看看 · 使用示例预算</button>
+        <text>默认：收入 ¥8,000 · 固定支出 ¥800 · 储蓄 ¥2,000，稍后可在设置中修改。</text>
+      </view>
 
       <button
         wx:if="{{drawerMode === 'edit' && budget.cycleStartDay === 1}}"

@@ -10,7 +10,7 @@ const {
   toDateKey
 } = require('../domain/date');
 const { formatCents, parseYuanToCents } = require('../domain/money');
-const { parseQuickEntry } = require('../domain/quick-entry');
+const { parseChineseNumber, parseQuickEntries, parseQuickEntry } = require('../domain/quick-entry');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
 const { parseAlipayBillCsv } = require('../domain/alipay-bill');
@@ -55,13 +55,36 @@ test('quick entry parses natural expense and income phrases', () => {
     direction: 'expense',
     directionLabel: '支出',
     note: '咖啡',
-    sourceText: '咖啡 20'
+    referenceRate: null,
+    sourceAmountText: '',
+    sourceCurrency: 'CNY',
+    sourceText: '咖啡 20',
+    timeText: ''
   });
   assert.equal(parseQuickEntry('花了20 在咖啡').value.note, '咖啡');
   assert.equal(parseQuickEntry('地铁４.５元').value.categoryId, 'transport');
   assert.equal(parseQuickEntry('工资 5000').value.categoryId, 'income_salary');
   assert.equal(parseQuickEntry('工资 5000').value.direction, 'income');
   assert.equal(parseQuickEntry('今天买东西').ok, false);
+
+  const multi = parseQuickEntries('今天早上吃早餐花了二十块钱，然后在九点的时候充值 GPT 花了十美金');
+  assert.equal(multi.ok, true);
+  assert.equal(multi.value.length, 2);
+  assert.deepEqual(multi.value.map((item) => item.amountCents), [2000, 7100]);
+  assert.equal(multi.value[0].note, '早餐');
+  assert.equal(multi.value[1].note, 'GPT 充值');
+  assert.equal(multi.value[1].timeText, '09:00');
+  assert.equal(multi.value[1].sourceAmountText, '$10.00');
+});
+
+test('quick entry keeps comma-linked purpose and parses digit-by-digit Chinese numbers', () => {
+  assert.equal(parseChineseNumber('二〇二六'), 2026);
+  const result = parseQuickEntries('早餐，花了二十块钱');
+  assert.equal(result.ok, true);
+  assert.equal(result.value.length, 1);
+  assert.equal(result.value[0].amountCents, 2000);
+  assert.equal(result.value[0].categoryId, 'food');
+  assert.equal(result.value[0].note, '早餐');
 });
 
 test('budget relations reject impossible saving and spending combinations', () => {
@@ -451,6 +474,11 @@ test('day and month summaries use only real dated records for trends', () => {
   const month = deriveSpendingSummary(state, 'month', now);
   assert.equal(month.metrics[0].value, '¥69');
   assert.equal(month.chart.reduce((sum, item) => sum + item.amountCents, 0), 1900);
+  assert.equal(month.calendarDays.filter((item) => !item.isBlank).length, 31);
+  assert.equal(month.calendarDays.find((item) => item.day === 9).amountText, '¥15');
+  assert.equal(month.dailyTrend.length, 31);
+  assert.equal(month.dailyTrend[8].amountCents, 1500);
+  assert.equal(month.analysisMetrics[0].value, '餐饮');
   assert.match(month.scopeText, /趋势不含该汇总/);
 });
 

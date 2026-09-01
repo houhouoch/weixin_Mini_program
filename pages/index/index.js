@@ -1254,8 +1254,8 @@ Page({
   async handleSmartSubmit(options) {
     const input = this.data.smartEntryInput;
     const parsed = parseQuickEntries(this.data.smartEntryInput);
-    if (parsed.ok) {
-      this.showSmartDrafts(parsed.value, options, 'local');
+    if (!String(input || '').trim()) {
+      this.setData({ smartEntryError: parsed.error });
       return;
     }
     const requestId = (this._smartParseRequestId || 0) + 1;
@@ -1274,6 +1274,11 @@ Page({
       trackEvent('ai_entry_parsed', { source: options && options.source === 'voice' ? 'voice' : 'text' });
     } catch (error) {
       if (requestId !== this._smartParseRequestId) return;
+      if (parsed.ok) {
+        this.showSmartDrafts(parsed.value, options, 'local');
+        trackEvent('ai_entry_failed', { fallback: 'local' });
+        return;
+      }
       this.setData({
         isSmartParsing: false,
         smartEntryError: `${parsed.error}；${error.message}`,

@@ -83,7 +83,7 @@
       <text class="minimal-message" wx:if="{{voiceHint}}">{{voiceHint}}</text>
       <text class="minimal-message minimal-message--success" wx:if="{{feedback}}">{{feedback}}</text>
       <text class="minimal-entry__income-note">外快、奖金可直接输入；固定收入无需重复记录。</text>
-      <text class="minimal-entry__income-note">简单账单在本机识别；复杂语句会发送至阿里云千问整理，确认前不会保存。</text>
+      <text class="minimal-entry__income-note">文字与语音会发送至阿里云千问整理；不可用时回退本机识别，确认前不会保存。</text>
 
       <view class="minimal-recent">
         <view class="minimal-section-heading">

@@ -57,6 +57,10 @@
         "type": "folder"
       },
       {
+        "value": "serverless",
+        "type": "folder"
+      },
+      {
         "value": "AGENTS.md",
         "type": "file"
       },

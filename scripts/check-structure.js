@@ -19,11 +19,13 @@ const required = [
   'domain/gb18030.js',
   'domain/wechat-bill.js',
   'domain/theme.js',
+  'domain/ai-entry.js',
   'infrastructure/file-system.js',
   'services/ledger-export.js',
   'services/data-backup.js',
   'services/spending-summary.js',
   'services/theme-store.js',
+  'services/ai-entry.js',
   'services/wechat-bill-import.js',
   'assets/icons/camera.svg',
   'assets/icons/camera-dark.svg',
@@ -115,6 +117,7 @@ check(
 );
 check(pageJs.includes('wx.chooseMedia') && pageJs.includes('confirmPhotoEntry'), '页面支持拍照或相册记账并在保存前确认');
 check(pageJs.includes('parseQuickEntries') && pageJs.includes('saveTransactionDrafts'), '文字与语音支持多笔账单拆分确认');
+check(pageJs.includes('parseEntriesWithAi') && pageJs.includes("showSmartDrafts(entries, options, 'ai')"), '本地解析失败后使用国内函数服务智能整理并进入同一确认层');
 check(pageJs.includes('onShareAppMessage'), '实现好友分享生命周期');
 check(pageJs.includes('onShareTimeline'), '实现朋友圈分享生命周期');
 check(pageJs.includes("path: '/pages/index/index?from=share'"), '分享路径只包含来源标记');
@@ -172,6 +175,7 @@ check(wxml.includes('bindtap="handleDetailsCalendarDay"')
   && wxml.includes('detailsDayTransactions')
   && pageJs.includes("listTransactions({ dateKey })"), '月历日期可点击并读取当天真实支出');
 check(wxml.includes('本地版本未配置 OCR 服务'), '拍照记账在未配置 OCR 时不伪造识别结果');
+check(wxml.includes('复杂语句会发送至阿里云千问整理'), '页面明示复杂文本的云端处理边界');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');
 check(wxml.includes('导出并打开 Excel'), '历史折叠区提供 Excel 导出入口');

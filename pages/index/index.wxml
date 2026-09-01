@@ -60,7 +60,9 @@
           wx:if="{{smartEntryInput && !smartEntryParsed}}"
           class="minimal-entry__submit"
           bindtap="handleSmartSubmit"
-        >识别账单</button>
+          loading="{{isSmartParsing}}"
+          disabled="{{isSmartParsing}}"
+        >{{isSmartParsing ? '正在智能整理…' : '识别账单'}}</button>
       </view>
 
       <view class="minimal-confirm" wx:if="{{smartEntryParsed}}">
@@ -81,6 +83,7 @@
       <text class="minimal-message" wx:if="{{voiceHint}}">{{voiceHint}}</text>
       <text class="minimal-message minimal-message--success" wx:if="{{feedback}}">{{feedback}}</text>
       <text class="minimal-entry__income-note">外快、奖金可直接输入；固定收入无需重复记录。</text>
+      <text class="minimal-entry__income-note">简单账单在本机识别；复杂语句会发送至阿里云千问整理，确认前不会保存。</text>
 
       <view class="minimal-recent">
         <view class="minimal-section-heading">
@@ -365,7 +368,7 @@
         <button class="capture-sheet__back" bindtap="retrySmartEntry" aria-label="返回">‹</button>
         <view>
           <text class="capture-sheet__title">确认账单</text>
-          <text class="capture-sheet__subtitle">{{smartEntrySource === 'voice' ? '语音已转写' : '文字已解析'}}，确认后才记入账本</text>
+          <text class="capture-sheet__subtitle">{{smartEntrySource === 'voice' ? '语音已转写' : '文字已输入'}} · {{smartEntryParser === 'ai' ? 'AI 已整理' : '本地已解析'}}，确认后才记入账本</text>
         </view>
       </view>
       <scroll-view class="capture-sheet__scroll" scroll-y enhanced>

@@ -22,6 +22,7 @@ const {
   parseYuanToCents
 } = require('../../domain/money');
 const { parseQuickEntries } = require('../../domain/quick-entry');
+const { parseEntriesWithAi } = require('../../services/ai-entry');
 const budgetStore = require('../../services/budget-store');
 const {
   createDataBackup,
@@ -382,6 +383,7 @@ Page({
     isBackingUp: false,
     isExporting: false,
     isSaving: false,
+    isSmartParsing: false,
     isTemplateSaving: false,
     isVoiceRecording: false,
     calendarWeekdays: ['一', '二', '三', '四', '五', '六', '日'],
@@ -413,6 +415,7 @@ Page({
     smartEntryError: '',
     smartEntryInput: '',
     smartEntryParsed: null,
+    smartEntryParser: 'local',
     smartEntryDrafts: [],
     smartEntrySource: 'text',
     smartReviewVisible: false,
@@ -1220,38 +1223,66 @@ Page({
   },
 
   handleSmartInput(event) {
+    this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
     this.setData({
       smartEntryError: '',
       smartEntryInput: event.detail.value,
       smartEntryParsed: null,
       smartEntryDrafts: [],
       smartReviewVisible: false,
+      isSmartParsing: false,
       voiceHint: ''
     });
   },
 
-  handleSmartSubmit(options) {
-    const parsed = parseQuickEntries(this.data.smartEntryInput);
-    if (!parsed.ok) {
-      this.setData({
-        smartEntryError: parsed.error,
-        smartEntryParsed: null,
-        smartEntryDrafts: [],
-        smartReviewVisible: false
-      });
-      return;
-    }
-    const smartEntryDrafts = parsed.value.map(toSmartDraft);
+  showSmartDrafts(entries, options, parser) {
+    const smartEntryDrafts = entries.map(toSmartDraft);
     this.setData({
+      isSmartParsing: false,
       smartEntryError: '',
       smartEntryDrafts,
       smartEntryParsed: smartEntryDrafts[0],
+      smartEntryParser: parser || 'local',
       smartEntrySource: options && options.source === 'voice' ? 'voice' : 'text',
       smartReviewVisible: true,
       smartSelectedCount: smartEntryDrafts.length,
       voiceHint: options && options.keepVoiceHint ? this.data.voiceHint : ''
     });
     wx.hideKeyboard();
+  },
+
+  async handleSmartSubmit(options) {
+    const input = this.data.smartEntryInput;
+    const parsed = parseQuickEntries(this.data.smartEntryInput);
+    if (parsed.ok) {
+      this.showSmartDrafts(parsed.value, options, 'local');
+      return;
+    }
+    const requestId = (this._smartParseRequestId || 0) + 1;
+    this._smartParseRequestId = requestId;
+    this.setData({
+      isSmartParsing: true,
+      smartEntryError: '',
+      smartEntryParsed: null,
+      smartEntryDrafts: [],
+      smartReviewVisible: false
+    });
+    try {
+      const entries = await parseEntriesWithAi(input);
+      if (requestId !== this._smartParseRequestId || input !== this.data.smartEntryInput) return;
+      this.showSmartDrafts(entries, options, 'ai');
+      trackEvent('ai_entry_parsed', { source: options && options.source === 'voice' ? 'voice' : 'text' });
+    } catch (error) {
+      if (requestId !== this._smartParseRequestId) return;
+      this.setData({
+        isSmartParsing: false,
+        smartEntryError: `${parsed.error}；${error.message}`,
+        smartEntryParsed: null,
+        smartEntryDrafts: [],
+        smartReviewVisible: false
+      });
+      trackEvent('ai_entry_failed', { fallback: 'manual' });
+    }
   },
 
   handleSmartExample(event) {
@@ -1264,8 +1295,10 @@ Page({
       smartEntryError: '',
       smartEntryDrafts: [],
       smartEntryParsed: null,
+      smartEntryParser: 'local',
       smartReviewVisible: false,
       smartSelectedCount: 0,
+      isSmartParsing: false,
       voiceHint: ''
     });
   },

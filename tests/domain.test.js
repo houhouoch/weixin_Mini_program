@@ -11,6 +11,11 @@ const {
 } = require('../domain/date');
 const { formatCents, parseYuanToCents } = require('../domain/money');
 const { parseChineseNumber, parseQuickEntries, parseQuickEntry } = require('../domain/quick-entry');
+const { normalizeAiEntries } = require('../domain/ai-entry');
+const {
+  parseHttpPayload,
+  validateEntries: validateCloudEntries
+} = require('../serverless/parse-ledger');
 const { deriveSpendingSummary } = require('../domain/spending-summary');
 const { buildLedgerWorkbook } = require('../domain/ledger-workbook');
 const { parseAlipayBillCsv } = require('../domain/alipay-bill');
@@ -610,5 +615,79 @@ test('both appearance modes keep readable contrast', () => {
     assert.ok(contrastRatio(resolved.surface, resolved.text) >= 4.5);
     assert.ok(contrastRatio(resolved.page, resolved.muted) >= 3);
     assert.ok(contrastRatio(resolved.surface, resolved.muted) >= 3);
+  });
+});
+
+test('AI ledger entries are normalized into the existing confirmation model', () => {
+  const result = normalizeAiEntries([{
+    direction: 'income',
+    categoryId: 'income_side_job',
+    note: '临时外快',
+    amount: 10,
+    currency: 'CNY',
+    time: '09:30'
+  }, {
+    direction: 'expense',
+    categoryId: 'entertainment',
+    note: 'GPT 充值',
+    amount: 10,
+    currency: 'USD',
+    time: '10:00'
+  }]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.map((item) => ({
+    amountCents: item.amountCents,
+    categoryId: item.categoryId,
+    direction: item.direction,
+    timeText: item.timeText
+  })), [{
+    amountCents: 1000,
+    categoryId: 'income_side_job',
+    direction: 'income',
+    timeText: '09:30'
+  }, {
+    amountCents: 7100,
+    categoryId: 'entertainment',
+    direction: 'expense',
+    timeText: '10:00'
+  }]);
+});
+
+test('cloud AI output is restricted to valid ledger fields before returning', () => {
+  const result = validateCloudEntries([{
+    direction: 'income',
+    categoryId: 'not_allowed',
+    note: '一笔很长很长很长很长很长很长的外快',
+    amount: 10,
+    currency: 'CNY',
+    time: '25:99'
+  }, {
+    direction: 'expense',
+    categoryId: 'food',
+    note: '午餐',
+    amount: -20,
+    currency: 'CNY',
+    time: '12:30'
+  }]);
+  assert.deepEqual(result, [{
+    direction: 'income',
+    categoryId: 'income_other',
+    note: '一笔很长很长很长很长很长很长的外快'.slice(0, 20),
+    amount: 10,
+    currency: 'CNY',
+    time: ''
+  }]);
+});
+
+test('FC HTTP payload accepts only an explicit JSON request body', () => {
+  const payload = parseHttpPayload(Buffer.from(JSON.stringify({
+    version: 'v1',
+    body: JSON.stringify({ code: 'login-code', text: '外快十块钱' }),
+    isBase64Encoded: false,
+    requestContext: { http: { method: 'POST' } }
+  })));
+  assert.deepEqual(payload, {
+    method: 'POST',
+    body: { code: 'login-code', text: '外快十块钱' }
   });
 });

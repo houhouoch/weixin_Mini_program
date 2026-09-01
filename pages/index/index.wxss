@@ -3626,24 +3626,21 @@
   display: flex !important;
   align-items: center;
   justify-content: center;
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 36rpx !important;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 44rpx !important;
   background: var(--theme-control, #F2F2F7) !important;
 }
 
 .minimal-entry__tool-icon {
-  width: 38rpx;
-  height: 38rpx;
-  padding: 7rpx;
-  border-radius: 12rpx;
-  background: var(--theme-text, #1D1D1F);
+  width: 40rpx;
+  height: 40rpx;
 }
 
 .minimal-entry__voice {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 40rpx !important;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 44rpx !important;
 }
 
 .minimal-analysis-heading {
@@ -4373,8 +4370,8 @@
 
 @media (max-width: 340px) {
   .minimal-entry__actions { gap: 6rpx; margin-left: 12rpx; }
-  .minimal-entry__tool { width: 64rpx; height: 64rpx; }
-  .minimal-entry__voice { width: 72rpx; height: 72rpx; }
+  .minimal-entry__tool,
+  .minimal-entry__voice { width: 88rpx; height: 88rpx; }
   .minimal-analysis__metrics { grid-template-columns: 1fr; }
   .minimal-analysis__metrics > view { padding: 16rpx 0; }
   .minimal-analysis__metrics > view + view { border-top: 1rpx solid var(--theme-hairline, rgba(60, 60, 67, 0.12)); border-left: 0; }

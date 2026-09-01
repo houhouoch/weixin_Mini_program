@@ -25,6 +25,8 @@ const required = [
   'services/spending-summary.js',
   'services/theme-store.js',
   'services/wechat-bill-import.js',
+  'assets/icons/camera.svg',
+  'assets/icons/camera-dark.svg',
   heroPath,
   'README.md'
 ];
@@ -241,8 +243,13 @@ check(!/--theme-(danger|warning)/.test(themeSource), '用户主题不生成 dang
 check(themeSource.includes("name: '浅色'")
   && themeSource.includes("name: '深色'")
   && !/name: '(海蓝|鼠尾草|暖砂)'/.test(themeSource), '主题只提供 Apple 浅色与深色外观');
+check(wxml.includes("themeResolved.scheme === 'dark' ? '/assets/icons/camera.svg' : '/assets/icons/camera-dark.svg'"), '相机图标随浅色与深色外观切换');
 
 const wxss = fs.readFileSync(path.join(root, 'pages/index/index.wxss'), 'utf8');
+check(/\.minimal-entry__tool-icon\s*\{[^}]*width:\s*40rpx[^}]*height:\s*40rpx[^}]*\}/.test(wxss)
+  && !/\.minimal-entry__tool-icon\s*\{[^}]*background:/.test(wxss), '相机图标不叠加方形背景');
+check(/\.minimal-entry__tool\s*\{[^}]*width:\s*88rpx[^}]*height:\s*88rpx/.test(wxss)
+  && /\.minimal-entry__voice\s*\{[^}]*width:\s*88rpx[^}]*height:\s*88rpx/.test(wxss), '相机与语音入口使用一致的 88rpx 圆形触控区');
 check(
   /\.fixed-expense-add\s*\{[^}]*min-height:\s*88rpx/.test(wxss),
   '固定支出新增入口满足 88rpx 触控高度'

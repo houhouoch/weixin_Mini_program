@@ -49,7 +49,7 @@
           </view>
           <view class="minimal-entry__actions">
             <button class="minimal-entry__tool" bindtap="handlePhotoEntry" aria-label="拍照或从相册记账">
-              <image class="minimal-entry__tool-icon" src="/assets/icons/camera.svg" mode="aspectFit" />
+              <image class="minimal-entry__tool-icon" src="{{themeResolved.scheme === 'dark' ? '/assets/icons/camera.svg' : '/assets/icons/camera-dark.svg'}}" mode="aspectFit" />
             </button>
             <button class="minimal-entry__voice {{isVoiceRecording ? 'minimal-entry__voice--active' : ''}}" bindtap="handleVoiceEntry" aria-label="{{isVoiceRecording ? '结束语音输入' : '开始语音输入'}}">
               <image class="minimal-entry__voice-icon" src="/assets/icons/microphone.svg" mode="aspectFit" />

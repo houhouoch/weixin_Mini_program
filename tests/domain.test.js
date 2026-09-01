@@ -461,7 +461,14 @@ test('day and month summaries use only real dated records for trends', () => {
       { id: 'yesterday', amountCents: 400, categoryId: 'transport', note: '地铁', occurredAt: new Date(2026, 7, 8, 8).getTime() },
       { id: 'income', amountCents: 50000, categoryId: 'income_side_job', direction: 'income', note: '外快', occurredAt: now.getTime() }
     ],
-    history: []
+    history: [{
+      monthKey: '2026-07',
+      historicalSpentBeforeTrackingCents: 0,
+      transactions: [
+        { id: 'july-food', amountCents: 2500, categoryId: 'food', note: '晚餐', occurredAt: new Date(2026, 6, 4, 19).getTime() },
+        { id: 'july-income', amountCents: 60000, categoryId: 'income_side_job', direction: 'income', note: '外快', occurredAt: new Date(2026, 6, 5, 12).getTime() }
+      ]
+    }]
   };
 
   const day = deriveSpendingSummary(state, 'day', now);
@@ -480,6 +487,17 @@ test('day and month summaries use only real dated records for trends', () => {
   assert.equal(month.dailyTrend[8].amountCents, 1500);
   assert.equal(month.analysisMetrics[0].value, '餐饮');
   assert.match(month.scopeText, /趋势不含该汇总/);
+
+  const previousMonth = deriveSpendingSummary(state, 'month', now, { monthKey: '2026-07' });
+  assert.equal(previousMonth.calendarMonthLabel, '2026年7月');
+  assert.equal(previousMonth.metrics[0].value, '¥25');
+  assert.equal(previousMonth.calendarDays.find((item) => item.day === 4).amountText, '¥25');
+  assert.equal(previousMonth.dailyTrend[3].amountCents, 2500);
+  assert.equal(previousMonth.calendarDays.some((item) => item.isToday), false);
+  assert.throws(
+    () => deriveSpendingSummary(state, 'month', now, { monthKey: '2026-09' }),
+    /统计月份无效/
+  );
 });
 
 test('custom spending summary includes both boundary dates and excludes income and baselines', () => {

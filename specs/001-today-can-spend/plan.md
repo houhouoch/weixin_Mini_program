@@ -26,6 +26,8 @@ pages/index (展示与交互)
 
 Apple 5.0 仍保持单页路由：文字/语音多笔核对与照片核对使用全屏状态层，不新增 tabBar 或后端。`wx.chooseMedia` 只提供相机/相册临时图片；未配置 OCR 服务时进入手动核对回退。月历与每日曲线在 `domain/spending-summary` 中由真实支出流水派生，页面只负责绘制。
 
+月度分析使用独立 `detailsAnalysisSummary`，与日/月/年/自定义回看状态分离。页面保存所选月份键，服务继续读取同一份本地状态；领域层接收“真实今天 + 所选月份”，避免历史月误标今天或当前月日均按月初计算。
+
 交易修改与删除使用 `addTransaction({ action: 'update' | 'delete', transactionId, commandId, ... })`，从而满足交易模块仅暴露两个 API，同时支持当前月和归档纠错。`listTransactions({ dateKey })` 在同一读取 API 内提供按日明细。防重复由页面锁和数据层 `commandId` 幂等共同保证。
 
 V1.2 已按“历史归档与聚合纯函数 → 消费回看 → 主题 token 派生”的顺序实现。页面只保存有限主题参数，不保存任意 CSS/WXSS 色值。年度总额可以包含启用前汇总，但年度趋势、最高月和分类排行只使用真实逐笔记录，并显示数据范围说明。

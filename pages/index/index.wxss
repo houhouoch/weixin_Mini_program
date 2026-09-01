@@ -3647,6 +3647,57 @@
   box-shadow: 0 12rpx 36rpx rgba(0, 0, 0, 0.04);
 }
 
+.spending-month-nav {
+  display: grid;
+  grid-template-columns: 88rpx minmax(0, 1fr) 88rpx;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 28rpx;
+}
+
+.spending-month-nav__button {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 44rpx !important;
+  background: var(--theme-control, #F2F2F7) !important;
+  color: #0A84FF !important;
+  font-size: 52rpx !important;
+  font-weight: 400 !important;
+  line-height: 64rpx !important;
+}
+
+.spending-month-nav__button[disabled] {
+  opacity: 0.28;
+}
+
+.spending-month-nav__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+}
+
+.spending-month-nav__title {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--theme-text, #1D1D1F);
+  font-size: 29rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spending-month-nav__context {
+  margin-top: 2rpx;
+  color: var(--theme-muted, #8E8E93);
+  font-size: 21rpx;
+  line-height: 30rpx;
+}
+
 .minimal-analysis__metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;

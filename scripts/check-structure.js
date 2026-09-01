@@ -161,7 +161,10 @@ check(wxml.includes('data-direction="income"') && wxml.includes('记下收入'),
 check(wxml.includes('固定收入无需重复记录'), '收入入口提示避免重复记录固定收入');
 check(wxml.includes('已扣除储蓄目标 ¥{{budgetSavingGoalText}}'), '首页明确显示扣除储蓄目标后的周期省下金额');
 check(pageJs.includes("income: '8000'") && pageJs.includes("fixedExpense: '800'") && pageJs.includes("savingGoal: '2000'") && wxml.includes('bindtap="useDefaultBudget"'), '首次设置可使用 8000/800/2000 示例预算先进入首页');
-check(wxml.includes('reviewSummary.calendarDays') && wxml.includes('monthlyTrendCanvas'), '支出分析展示每日金额日历和走势曲线');
+check(wxml.includes('detailsAnalysisSummary.calendarDays') && wxml.includes('monthlyTrendCanvas'), '支出分析展示每日金额日历和走势曲线');
+check(wxml.includes('bindtap="handleDetailsMonthChange"')
+  && pageJs.includes('REVIEW_MIN_MONTH_KEY')
+  && pageJs.includes("getSpendingSummary('month', new Date(),"), '月度分析支持近 36 个月切换且不进入未来月份');
 check(wxml.includes('本地版本未配置 OCR 服务'), '拍照记账在未配置 OCR 时不伪造识别结果');
 check(wxml.includes('historyIncomeText') && wxml.includes('historyExpenseText'), '历史摘要区分收入与支出');
 check(wxml.includes('启用前汇总不会伪装成某一天的明细'), '日期空状态说明汇总基线边界');

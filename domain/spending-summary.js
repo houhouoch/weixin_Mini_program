@@ -259,14 +259,25 @@ function deriveDaySummary(state, now) {
   });
 }
 
-function deriveMonthSummary(state, now) {
-  const monthKey = toMonthKey(now);
+function requestedMonthKey(value, now) {
+  if (!value) return toMonthKey(now);
+  if (!/^\d{4}-\d{2}$/.test(value)) throw new Error('统计月份无效');
+  const date = parseLocalDateKey(`${value}-01`);
+  if (!date || toMonthKey(date) !== value || value > toMonthKey(now)) {
+    throw new Error('统计月份无效');
+  }
+  return value;
+}
+
+function deriveMonthSummary(state, now, monthKeyValue) {
+  const monthKey = requestedMonthKey(monthKeyValue, now);
+  const monthDate = parseLocalDateKey(`${monthKey}-01`);
   const source = monthSource(state, monthKey);
   const actualTotal = sumAmounts(source.transactions);
   const total = source.baselineCents + actualTotal;
-  const elapsedDays = state.monthKey === monthKey
+  const elapsedDays = toMonthKey(now) === monthKey
     ? now.getDate()
-    : daysInMonth(new Date(`${monthKey}-01T00:00:00`));
+    : daysInMonth(monthDate);
   const dayTotals = Object.create(null);
   source.transactions.forEach((item) => {
     const day = asDate(item.occurredAt).getDate();
@@ -305,7 +316,7 @@ function deriveMonthSummary(state, now) {
       metric('最高日', highest ? `${highest.day}日 · ${formatMetric(highest.amountCents)}` : '--')
     ],
     calendarDays: buildMonthCalendar(monthKey, dayTotals, now),
-    calendarMonthLabel: `${now.getFullYear()}年${now.getMonth() + 1}月`,
+    calendarMonthLabel: `${monthDate.getFullYear()}年${monthDate.getMonth() + 1}月`,
     dailyTrend: dailyTrend.points,
     trendLabels: dailyTrend.labels,
     trendMaxText: formatMetric(dailyTrend.maxCents)
@@ -408,7 +419,7 @@ function deriveSpendingSummary(state, period, value, range) {
   }
   const now = startOfDay(value || new Date());
   if (period === 'custom') return deriveCustomSummary(state, now, range);
-  if (period === 'month') return deriveMonthSummary(state, now);
+  if (period === 'month') return deriveMonthSummary(state, now, range && range.monthKey);
   if (period === 'year') return deriveYearSummary(state, now);
   return deriveDaySummary(state, now);
 }

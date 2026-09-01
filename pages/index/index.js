@@ -263,6 +263,7 @@ function occurredAtForTime(timeText, now) {
 const INITIAL_THEME = resolveTheme(DEFAULT_THEME_SETTINGS);
 const INITIAL_NOW = new Date();
 const INITIAL_DATE_KEY = toDateKey(INITIAL_NOW);
+const INITIAL_MONTH_KEY = toMonthKey(INITIAL_NOW);
 const INITIAL_REVIEW_START_KEY = toDateKey(new Date(
   INITIAL_NOW.getFullYear(),
   INITIAL_NOW.getMonth(),
@@ -273,6 +274,34 @@ const REVIEW_MIN_DATE_KEY = toDateKey(new Date(
   INITIAL_NOW.getMonth() - 36,
   1
 ));
+const REVIEW_MIN_MONTH_KEY = REVIEW_MIN_DATE_KEY.slice(0, 7);
+
+function monthDateFromKey(monthKey) {
+  return parseLocalDateKey(`${monthKey}-01`);
+}
+
+function shiftMonthKey(monthKey, offset) {
+  const current = monthDateFromKey(monthKey);
+  if (!current) return '';
+  return toMonthKey(new Date(current.getFullYear(), current.getMonth() + offset, 1));
+}
+
+function detailsMonthState(monthKey, now) {
+  const current = new Date(now);
+  const currentKey = toMonthKey(current);
+  const candidate = monthDateFromKey(monthKey);
+  const selected = candidate && toMonthKey(candidate) <= currentKey ? candidate : current;
+  const selectedKey = toMonthKey(selected);
+  return {
+    detailsMonthCanNext: selectedKey < currentKey,
+    detailsMonthCanPrevious: selectedKey > REVIEW_MIN_MONTH_KEY,
+    detailsMonthContext: selectedKey === currentKey ? '本月' : '往期账单',
+    detailsMonthKey: selectedKey,
+    detailsMonthLabel: `${selected.getFullYear()}年${selected.getMonth() + 1}月`
+  };
+}
+
+const INITIAL_DETAILS_MONTH = detailsMonthState(INITIAL_MONTH_KEY, INITIAL_NOW);
 const REVIEW_PERIODS = Object.freeze([
   Object.freeze({ id: 'day', label: '日' }),
   Object.freeze({ id: 'month', label: '月' }),
@@ -301,6 +330,9 @@ Page({
     cycleStartDayIndex: 0,
     dateLabel: '',
     detailsAnalysisVisible: true,
+    detailsAnalysisError: '',
+    detailsAnalysisLoading: false,
+    detailsAnalysisSummary: null,
     detailsError: '',
     detailsExpenseText: '0.00',
     detailsIncomeText: '0.00',
@@ -309,6 +341,11 @@ Page({
     detailsRecordCount: 0,
     detailsScopeLabel: '本月支出',
     detailsTransactions: [],
+    detailsMonthCanNext: INITIAL_DETAILS_MONTH.detailsMonthCanNext,
+    detailsMonthCanPrevious: INITIAL_DETAILS_MONTH.detailsMonthCanPrevious,
+    detailsMonthContext: INITIAL_DETAILS_MONTH.detailsMonthContext,
+    detailsMonthKey: INITIAL_DETAILS_MONTH.detailsMonthKey,
+    detailsMonthLabel: INITIAL_DETAILS_MONTH.detailsMonthLabel,
     drawerMode: 'first',
     drawerVisible: false,
     feedback: '',
@@ -629,6 +666,7 @@ Page({
       : result.todaySpentCents > 0 ? 100 : 0;
     const presentation = statusPresentation(result, spentProgressPercent);
     const amountText = presentation.amountText;
+    const selectedMonthState = detailsMonthState(this.data.detailsMonthKey, now);
 
     this.setData({
       amountSizeClass: amountText.length > 9
@@ -638,6 +676,11 @@ Page({
       budgetFixedExpenseText: formatCents(budget.fixedExpenseCents),
       budgetIncomeText: formatCents(budget.incomeCents),
       budgetSavingGoalText: formatCents(budget.savingGoalCents),
+      detailsMonthCanNext: selectedMonthState.detailsMonthCanNext,
+      detailsMonthCanPrevious: selectedMonthState.detailsMonthCanPrevious,
+      detailsMonthContext: selectedMonthState.detailsMonthContext,
+      detailsMonthKey: selectedMonthState.detailsMonthKey,
+      detailsMonthLabel: selectedMonthState.detailsMonthLabel,
       quickTemplates: (quickTemplates || this.data.quickTemplates).map(toQuickTemplateView),
       recentTransactions: transactions.slice(0, 3).map((item) => toTransactionView(item, now)),
       readMessage: '',
@@ -672,7 +715,15 @@ Page({
       viewState: 'ready'
     });
     const secondaryRefreshes = [];
-    if (this.data.activeTab === 'details') secondaryRefreshes.push(this.refreshDetails(now));
+    if (this.data.activeTab === 'details') {
+      const detailsMonth = monthDateFromKey(selectedMonthState.detailsMonthKey) || now;
+      secondaryRefreshes.push(this.refreshDetails(
+        this.data.detailsPeriod === 'month' ? detailsMonth : now
+      ));
+      if (this.data.detailsAnalysisVisible) {
+        secondaryRefreshes.push(this.refreshDetailsAnalysis(detailsMonth));
+      }
+    }
     if (this.data.sections.review) secondaryRefreshes.push(this.refreshReview(now));
     if (this.data.sections.review && this.data.reviewDetailVisible) {
       secondaryRefreshes.push(this.refreshReviewDetails());
@@ -697,8 +748,9 @@ Page({
     if (!['home', 'details', 'settings'].includes(activeTab)) return;
     this.setData({ activeTab }, () => {
       if (activeTab === 'details') {
-        this.refreshDetails(new Date());
-        if (this.data.detailsAnalysisVisible) this.refreshReview(new Date());
+        const selectedMonth = this.getDetailsMonthDate() || new Date();
+        this.refreshDetails(this.data.detailsPeriod === 'month' ? selectedMonth : new Date());
+        if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
       }
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
@@ -708,8 +760,9 @@ Page({
 
   showAllTransactions() {
     this.setData({ activeTab: 'details' }, () => {
-      this.refreshDetails(new Date());
-      if (this.data.detailsAnalysisVisible) this.refreshReview(new Date());
+      const selectedMonth = this.getDetailsMonthDate() || new Date();
+      this.refreshDetails(this.data.detailsPeriod === 'month' ? selectedMonth : new Date());
+      if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
       if (typeof wx.pageScrollTo === 'function') {
         wx.pageScrollTo({ scrollTop: 0, duration: 180 });
       }
@@ -720,7 +773,31 @@ Page({
     const detailsPeriod = event.currentTarget.dataset.period;
     if (detailsPeriod !== 'month' && detailsPeriod !== 'all') return;
     if (detailsPeriod === this.data.detailsPeriod) return;
-    this.setData({ detailsPeriod }, () => this.refreshDetails(new Date()));
+    this.setData({ detailsPeriod }, () => {
+      const selectedMonth = this.getDetailsMonthDate() || new Date();
+      this.refreshDetails(detailsPeriod === 'month' ? selectedMonth : new Date());
+    });
+  },
+
+  getDetailsMonthDate() {
+    return monthDateFromKey(this.data.detailsMonthKey);
+  },
+
+  handleDetailsMonthChange(event) {
+    const offset = Number(event.currentTarget.dataset.offset);
+    if (offset !== -1 && offset !== 1) return;
+    const nextKey = shiftMonthKey(this.data.detailsMonthKey, offset);
+    const currentKey = toMonthKey(new Date());
+    if (!nextKey || nextKey < REVIEW_MIN_MONTH_KEY || nextKey > currentKey) return;
+    const selectedMonth = monthDateFromKey(nextKey);
+    this.setData(detailsMonthState(nextKey, new Date()), () => {
+      if (this.data.detailsPeriod === 'month') this.refreshDetails(selectedMonth);
+      if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
+    });
+    trackEvent('details_month_changed', {
+      direction: offset < 0 ? 'previous' : 'next',
+      isCurrent: nextKey === currentKey
+    });
   },
 
   async refreshDetails(now) {
@@ -770,12 +847,35 @@ Page({
 
   toggleDetailsAnalysis() {
     const detailsAnalysisVisible = !this.data.detailsAnalysisVisible;
-    this.setData({
-      detailsAnalysisVisible,
-      reviewPeriod: detailsAnalysisVisible ? 'month' : this.data.reviewPeriod
-    }, () => {
-      if (detailsAnalysisVisible) this.refreshReview(new Date());
+    this.setData({ detailsAnalysisVisible }, () => {
+      if (detailsAnalysisVisible) {
+        this.refreshDetailsAnalysis(this.getDetailsMonthDate() || new Date());
+      }
     });
+  },
+
+  async refreshDetailsAnalysis(now) {
+    const requestId = (this._detailsAnalysisReadId || 0) + 1;
+    this._detailsAnalysisReadId = requestId;
+    this.setData({ detailsAnalysisLoading: true, detailsAnalysisError: '' });
+    try {
+      const selectedMonth = now || this.getDetailsMonthDate() || new Date();
+      const detailsAnalysisSummary = await getSpendingSummary('month', new Date(), {
+        monthKey: toMonthKey(selectedMonth)
+      });
+      if (requestId !== this._detailsAnalysisReadId) return;
+      this.setData({ detailsAnalysisSummary }, () => {
+        if (this.data.activeTab === 'details') this.drawMonthlyTrend(detailsAnalysisSummary);
+      });
+    } catch (error) {
+      if (requestId !== this._detailsAnalysisReadId) return;
+      console.error('读取月度支出分析失败', error);
+      this.setData({ detailsAnalysisError: '这个月的支出分析暂时没读到，请稍后重试。' });
+    } finally {
+      if (requestId === this._detailsAnalysisReadId) {
+        this.setData({ detailsAnalysisLoading: false });
+      }
+    }
   },
 
   async refreshReview(now) {
@@ -803,11 +903,7 @@ Page({
           reviewTransactions: []
         });
       }
-      this.setData(nextReviewData, () => {
-        if (reviewSummary.period === 'month' && this.data.activeTab === 'details') {
-          this.drawMonthlyTrend(reviewSummary);
-        }
-      });
+      this.setData(nextReviewData);
     } catch (error) {
       if (requestId !== this._reviewReadId) return;
       console.error('读取消费回看失败', error);
@@ -2117,7 +2213,11 @@ Page({
           this.setData({
             activeTab: 'details',
             billImportPreview: preview
-          }, () => this.refreshDetails(new Date()));
+          }, () => {
+            const selectedMonth = this.getDetailsMonthDate() || new Date();
+            this.refreshDetails(this.data.detailsPeriod === 'month' ? selectedMonth : new Date());
+            if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
+          });
           trackEvent('bill_import', {
             outcome: 'previewed',
             recordCount: preview.importCount

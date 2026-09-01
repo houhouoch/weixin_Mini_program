@@ -107,7 +107,7 @@
       </view>
 
       <view class="minimal-filter" role="tablist" aria-label="明细范围">
-        <button class="minimal-filter__item {{detailsPeriod === 'month' ? 'minimal-filter__item--active' : ''}}" data-period="month" bindtap="handleDetailsPeriod">本月</button>
+        <button class="minimal-filter__item {{detailsPeriod === 'month' ? 'minimal-filter__item--active' : ''}}" data-period="month" bindtap="handleDetailsPeriod">按月</button>
         <button class="minimal-filter__item {{detailsPeriod === 'all' ? 'minimal-filter__item--active' : ''}}" data-period="all" bindtap="handleDetailsPeriod">全部</button>
       </view>
 
@@ -128,44 +128,64 @@
         <button class="minimal-link" bindtap="toggleDetailsAnalysis">{{detailsAnalysisVisible ? '收起' : '展开'}}</button>
       </view>
       <view class="minimal-analysis" wx:if="{{detailsAnalysisVisible}}">
-        <view class="minimal-state-inline" wx:if="{{reviewLoading}}">正在整理支出…</view>
-        <view class="minimal-state-inline minimal-state-inline--error" wx:elif="{{reviewError}}">{{reviewError}}</view>
-        <block wx:elif="{{reviewSummary}}">
+        <view class="spending-month-nav">
+          <button
+            class="spending-month-nav__button"
+            data-offset="-1"
+            bindtap="handleDetailsMonthChange"
+            disabled="{{!detailsMonthCanPrevious}}"
+            aria-label="查看上个月"
+          >‹</button>
+          <view class="spending-month-nav__copy">
+            <text class="spending-month-nav__title">{{detailsMonthLabel}}</text>
+            <text class="spending-month-nav__context">{{detailsMonthContext}}</text>
+          </view>
+          <button
+            class="spending-month-nav__button"
+            data-offset="1"
+            bindtap="handleDetailsMonthChange"
+            disabled="{{!detailsMonthCanNext}}"
+            aria-label="查看下个月"
+          >›</button>
+        </view>
+        <view class="minimal-state-inline" wx:if="{{detailsAnalysisLoading}}">正在整理支出…</view>
+        <view class="minimal-state-inline minimal-state-inline--error" wx:elif="{{detailsAnalysisError}}">{{detailsAnalysisError}}</view>
+        <block wx:elif="{{detailsAnalysisSummary}}">
           <view class="minimal-analysis__metrics">
-            <view wx:for="{{reviewSummary.analysisMetrics || reviewSummary.metrics}}" wx:key="label">
+            <view wx:for="{{detailsAnalysisSummary.analysisMetrics || detailsAnalysisSummary.metrics}}" wx:key="label">
               <text>{{item.label}}</text>
               <text>{{item.value}}</text>
             </view>
           </view>
-          <view class="spending-calendar" wx:if="{{reviewSummary.period === 'month'}}">
+          <view class="spending-calendar" wx:if="{{detailsAnalysisSummary.period === 'month'}}">
             <view class="spending-calendar__heading">
-              <text>{{reviewSummary.calendarMonthLabel}}</text>
               <text>每日支出</text>
+              <text>日历</text>
             </view>
             <view class="spending-calendar__weekdays">
               <text wx:for="{{calendarWeekdays}}" wx:key="*this">{{item}}</text>
             </view>
             <view class="spending-calendar__grid">
-              <view class="spending-calendar__day {{item.isBlank ? 'spending-calendar__day--blank' : ''}} {{item.isToday ? 'spending-calendar__day--today' : ''}} {{item.isHigh ? 'spending-calendar__day--high' : ''}}" wx:for="{{reviewSummary.calendarDays}}" wx:key="key">
+              <view class="spending-calendar__day {{item.isBlank ? 'spending-calendar__day--blank' : ''}} {{item.isToday ? 'spending-calendar__day--today' : ''}} {{item.isHigh ? 'spending-calendar__day--high' : ''}}" wx:for="{{detailsAnalysisSummary.calendarDays}}" wx:key="key">
                 <text class="spending-calendar__date" wx:if="{{!item.isBlank}}">{{item.day}}</text>
                 <text class="spending-calendar__amount" wx:if="{{item.hasAmount}}">{{item.amountText}}</text>
               </view>
             </view>
           </view>
-          <view class="spending-trend" wx:if="{{reviewSummary.period === 'month'}}">
+          <view class="spending-trend" wx:if="{{detailsAnalysisSummary.period === 'month'}}">
             <view class="spending-trend__heading">
               <view>
                 <text class="spending-trend__title">每日走势</text>
                 <text class="spending-trend__copy">曲线越高，当天支出越多</text>
               </view>
-              <text class="spending-trend__max">最高 {{reviewSummary.trendMaxText}}</text>
+              <text class="spending-trend__max">最高 {{detailsAnalysisSummary.trendMaxText}}</text>
             </view>
-            <canvas type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="本月每日支出走势曲线" />
+            <canvas type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="{{detailsMonthLabel}}每日支出走势曲线" />
             <view class="spending-trend__labels">
-              <text wx:for="{{reviewSummary.trendLabels}}" wx:key="day">{{item.label}}</text>
+              <text wx:for="{{detailsAnalysisSummary.trendLabels}}" wx:key="day">{{item.label}}</text>
             </view>
           </view>
-          <text class="minimal-analysis__insight">{{reviewSummary.scopeText}}</text>
+          <text class="minimal-analysis__insight">{{detailsAnalysisSummary.scopeText}}</text>
         </block>
       </view>
 

@@ -33,6 +33,14 @@
   "packOptions": {
     "ignore": [
       {
+        "value": ".impeccable",
+        "type": "folder"
+      },
+      {
+        "value": "assets/images",
+        "type": "folder"
+      },
+      {
         "value": "today-can-spend-minimal",
         "type": "folder"
       },

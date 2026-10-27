@@ -67,9 +67,9 @@ const ignoredPackageFolders = new Set(
     .map((item) => item.value)
 );
 check(
-  ['design-system', 'docs', 'scripts', 'specs', 'tests']
+  ['design-system', 'docs', 'scripts', 'specs', 'tests', '.impeccable', 'assets/images']
     .every((folder) => ignoredPackageFolders.has(folder)),
-  '设计稿、文档、脚本、规格和测试不进入微信主包'
+  '设计稿、文档、脚本、规格、测试、验收截图与旧插画不进入微信主包'
 );
 
 const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));

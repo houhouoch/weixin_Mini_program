@@ -4284,3 +4284,5 @@
   .capture-sheet { animation: none; }
   .capture-draft { transition: none; }
 }
+
+@import "./apple6.wxss";

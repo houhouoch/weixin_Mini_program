@@ -316,6 +316,7 @@ function deriveMonthSummary(state, now, monthKeyValue) {
       metric('日均支出', formatMetric(Math.floor(total / Math.max(elapsedDays, 1)))),
       metric('最高日', highest ? `${highest.day}日 · ${formatMetric(highest.amountCents)}` : '--')
     ],
+    categoryBreakdown: categoryBreakdown(source.transactions),
     calendarDays: buildMonthCalendar(monthKey, dayTotals, now),
     calendarMonthLabel: `${monthDate.getFullYear()}年${monthDate.getMonth() + 1}月`,
     dailyTrend: dailyTrend.points,

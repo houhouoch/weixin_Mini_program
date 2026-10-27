@@ -345,10 +345,14 @@ Page({
     detailsExpenseText: '0.00',
     detailsIncomeText: '0.00',
     detailsLoading: false,
+    detailsDirection: 'expense',
+    budgetExplanationVisible: false,
+    voiceBars: [24, 48, 70, 40, 90, 54, 76, 100, 64, 38, 82, 46, 68, 36, 22],
     detailsPeriod: 'month',
     detailsRecordCount: 0,
     detailsScopeLabel: '本月支出',
     detailsTransactions: [],
+    detailsVisibleTransactions: [],
     detailsMonthCanNext: INITIAL_DETAILS_MONTH.detailsMonthCanNext,
     detailsMonthCanPrevious: INITIAL_DETAILS_MONTH.detailsMonthCanPrevious,
     detailsMonthContext: INITIAL_DETAILS_MONTH.detailsMonthContext,
@@ -420,6 +424,8 @@ Page({
     smartEntrySource: 'text',
     smartReviewVisible: false,
     smartSelectedCount: 0,
+    smartExpenseTotalText: '0.00',
+    smartIncomeTotalText: '0.00',
     smartExamples: [
       { id: 'coffee', label: '咖啡 20' },
       { id: 'metro', label: '地铁 4' },
@@ -472,10 +478,14 @@ Page({
   },
 
   onHide() {
+    this._voiceManualFallback = true;
+    this.cancelTrendAnimation();
     this.stopVoiceRecognition();
   },
 
   onUnload() {
+    this.cancelTrendAnimation();
+    this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
     this.stopVoiceRecognition();
     if (!this._voiceManager) return;
     this._voiceManager.onStart = null;
@@ -518,6 +528,11 @@ Page({
       };
       manager.onStop = (result) => {
         this._voiceStarting = false;
+        if (this._voiceManualFallback) {
+          this._voiceManualFallback = false;
+          this.setData({ isVoiceRecording: false });
+          return;
+        }
         const text = String(result && result.result || '').trim();
         if (!text) {
           this.setData({
@@ -762,7 +777,7 @@ Page({
         }
       }
       if (typeof wx.pageScrollTo === 'function') {
-        wx.pageScrollTo({ scrollTop: 0, duration: 180 });
+        wx.pageScrollTo({ scrollTop: 0, duration: this.data.themeSettings.reducedMotion ? 0 : 180 });
       }
     });
   },
@@ -778,7 +793,7 @@ Page({
         }
       }
       if (typeof wx.pageScrollTo === 'function') {
-        wx.pageScrollTo({ scrollTop: 0, duration: 180 });
+        wx.pageScrollTo({ scrollTop: 0, duration: this.data.themeSettings.reducedMotion ? 0 : 180 });
       }
     });
   },
@@ -798,6 +813,7 @@ Page({
   },
 
   handleDetailsMonthChange(event) {
+    this.cancelTrendAnimation();
     const offset = Number(event.currentTarget.dataset.offset);
     if (offset !== -1 && offset !== 1) return;
     const nextKey = shiftMonthKey(this.data.detailsMonthKey, offset);
@@ -896,7 +912,8 @@ Page({
       this.setData({
         detailsExpenseText: formatCents(expenseCents),
         detailsIncomeText: formatCents(incomeCents),
-        detailsRecordCount: transactions.length,
+        detailsRecordCount: transactions.filter((item) => item.direction === this.data.detailsDirection).length,
+        detailsVisibleTransactions: transactions.filter((item) => item.direction === this.data.detailsDirection).map((item) => toTransactionView(item, current)),
         detailsScopeLabel: this.data.detailsPeriod === 'all'
           ? '全部支出'
           : `${current.getMonth() + 1}月支出`,
@@ -982,77 +999,83 @@ Page({
     }
   },
 
+  cancelTrendAnimation() {
+    this._trendRenderId = (this._trendRenderId || 0) + 1;
+    if (this._trendCanvas && this._trendFrame !== undefined) {
+      this._trendCanvas.cancelAnimationFrame(this._trendFrame);
+      this._trendFrame = undefined;
+    }
+  },
+
   drawMonthlyTrend(summary) {
+    this.cancelTrendAnimation();
+    const renderId = this._trendRenderId;
     const points = summary && summary.dailyTrend || [];
     if (!points.length || typeof this.createSelectorQuery !== 'function') return;
+    const today = toDateKey(new Date());
+    const valid = points.filter((point) => `${this.data.detailsMonthKey}-${String(point.day).padStart(2, '0')}` <= today);
+    if (!valid.length) return;
     wx.nextTick(() => {
-      this.createSelectorQuery()
-        .select('#monthlyTrendCanvas')
-        .fields({ node: true, size: true })
-        .exec((result) => {
-          const target = result && result[0];
-          if (!target || !target.node || !target.width || !target.height) return;
-          const canvas = target.node;
-          const context = canvas.getContext('2d');
-          const pixelRatio = typeof wx.getWindowInfo === 'function'
-            ? wx.getWindowInfo().pixelRatio
-            : 2;
-          canvas.width = target.width * pixelRatio;
-          canvas.height = target.height * pixelRatio;
-          context.scale(pixelRatio, pixelRatio);
-          const width = target.width;
-          const height = target.height;
-          const padX = 8;
-          const padTop = 18;
-          const padBottom = 18;
-          const max = Math.max(1, ...points.map((item) => item.amountCents));
-          const coordinates = points.map((item, index) => ({
-            x: padX + index * (width - padX * 2) / Math.max(points.length - 1, 1),
-            y: padTop + (1 - item.amountCents / max) * (height - padTop - padBottom)
-          }));
+      this.createSelectorQuery().select('#monthlyTrendCanvas').fields({ node: true, size: true }).exec((result) => {
+        if (renderId !== this._trendRenderId) return;
+        const target = result && result[0];
+        if (!target || !target.node || !target.width || !target.height) return;
+        const canvas = target.node;
+        this._trendCanvas = canvas;
+        const context = canvas.getContext('2d');
+        const pixelRatio = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo().pixelRatio : 2;
+        canvas.width = target.width * pixelRatio;
+        canvas.height = target.height * pixelRatio;
+        context.scale(pixelRatio, pixelRatio);
+        const width = target.width;
+        const height = target.height;
+        const theme = this.data.themeResolved;
+        const plotWidth = width - 44;
+        const top = 24;
+        const bottom = height - 16;
+        const max = Math.max(100, ...valid.map((item) => item.amountCents));
+        const axisMax = Math.ceil(max / 100) * 100;
+        const coords = valid.map((point) => ({
+          x: 4 + (point.day - 1) * (plotWidth - 8) / Math.max(points.length - 1, 1),
+          y: top + (1 - point.amountCents / axisMax) * (bottom - top)
+        }));
+        const draw = (progress) => {
+          if (renderId !== this._trendRenderId) return;
           context.clearRect(0, 0, width, height);
-          context.beginPath();
-          context.moveTo(coordinates[0].x, coordinates[0].y);
-          for (let index = 1; index < coordinates.length - 1; index += 1) {
-            const current = coordinates[index];
-            const next = coordinates[index + 1];
-            context.quadraticCurveTo(
-              current.x,
-              current.y,
-              (current.x + next.x) / 2,
-              (current.y + next.y) / 2
-            );
+          context.font = '10px sans-serif';
+          context.fillStyle = theme.muted;
+          context.textAlign = 'left';
+          [0, 0.5, 1].forEach((fraction) => {
+            const y = bottom - fraction * (bottom - top);
+            context.beginPath(); context.moveTo(0, y); context.lineTo(plotWidth, y);
+            context.strokeStyle = theme.hairline; context.lineWidth = 0.6; context.stroke();
+            context.fillText(`¥${Math.round(axisMax * fraction) / 100}`, plotWidth + 5, y + 3);
+          });
+          context.save(); context.beginPath(); context.rect(0, 0, plotWidth * progress, height); context.clip();
+          context.beginPath(); context.moveTo(coords[0].x, coords[0].y);
+          // Midpoint cubic interpolation is bounded between adjacent daily values.
+          for (let i = 1; i < coords.length; i += 1) {
+            const previous = coords[i - 1]; const current = coords[i];
+            const mid = (previous.x + current.x) / 2;
+            context.bezierCurveTo(mid, previous.y, mid, current.y, current.x, current.y);
           }
-          const last = coordinates[coordinates.length - 1];
-          context.lineTo(last.x, last.y);
-          const gradient = context.createLinearGradient(0, padTop, 0, height);
-          gradient.addColorStop(0, 'rgba(10,132,255,0.24)');
-          gradient.addColorStop(1, 'rgba(10,132,255,0)');
-          context.lineTo(last.x, height);
-          context.lineTo(coordinates[0].x, height);
-          context.closePath();
-          context.fillStyle = gradient;
-          context.fill();
-
-          context.beginPath();
-          context.moveTo(coordinates[0].x, coordinates[0].y);
-          for (let index = 1; index < coordinates.length - 1; index += 1) {
-            const current = coordinates[index];
-            const next = coordinates[index + 1];
-            context.quadraticCurveTo(
-              current.x,
-              current.y,
-              (current.x + next.x) / 2,
-              (current.y + next.y) / 2
-            );
-          }
-          context.lineTo(last.x, last.y);
-          context.strokeStyle = '#0A84FF';
-          context.lineWidth = 2.5;
-          context.lineCap = 'round';
-          context.lineJoin = 'round';
-          context.stroke();
-        });
+          context.strokeStyle = theme.primary; context.lineWidth = 2; context.lineCap = 'round'; context.stroke();
+          const last = coords[coords.length - 1];
+          context.beginPath(); context.arc(last.x, last.y, 3, 0, Math.PI * 2); context.fillStyle = theme.primary; context.fill();
+          context.restore();
+        };
+        const reduced = this.data.themeSettings.reducedMotion || typeof canvas.requestAnimationFrame !== 'function';
+        if (reduced) { draw(1); return; }
+        const started = Date.now();
+        const tick = () => {
+          if (renderId !== this._trendRenderId) return;
+          const progress = Math.min(1, (Date.now() - started) / 240);
+          draw(1 - Math.pow(1 - progress, 3));
+          if (progress < 1) this._trendFrame = canvas.requestAnimationFrame(tick);
+          else this._trendFrame = undefined;
+        };
+        tick();
+      });
     });
   },
 
@@ -1239,10 +1262,12 @@ Page({
       smartSelectedCount: smartEntryDrafts.length,
       voiceHint: options && options.keepVoiceHint ? this.data.voiceHint : ''
     });
+    this.syncSmartTotals();
     wx.hideKeyboard();
   },
 
   async handleSmartSubmit(options) {
+    if (this.data.isSmartParsing || this.data.isSaving) return;
     const input = this.data.smartEntryInput;
     const parsed = parseQuickEntries(this.data.smartEntryInput);
     if (!String(input || '').trim()) {
@@ -1264,7 +1289,7 @@ Page({
       this.showSmartDrafts(entries, options, 'ai');
       trackEvent('ai_entry_parsed', { source: options && options.source === 'voice' ? 'voice' : 'text' });
     } catch (error) {
-      if (requestId !== this._smartParseRequestId) return;
+      if (requestId !== this._smartParseRequestId || input !== this.data.smartEntryInput) return;
       if (parsed.ok) {
         this.showSmartDrafts(parsed.value, options, 'local');
         trackEvent('ai_entry_failed', { fallback: 'local' });
@@ -1287,6 +1312,7 @@ Page({
   },
 
   retrySmartEntry() {
+    this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
     this.setData({
       smartEntryError: '',
       smartEntryDrafts: [],
@@ -1318,7 +1344,80 @@ Page({
     this.setData({
       smartEntryDrafts: drafts,
       smartSelectedCount: drafts.filter((item) => item.selected).length
+    }, () => this.syncSmartTotals());
+  },
+
+  syncSmartTotals() {
+    const totals = { expense: 0, income: 0 };
+    let invalid = false;
+    this.data.smartEntryDrafts.filter((item) => item.selected).forEach((item) => {
+      const amount = parseYuanToCents(item.amountInput, { allowZero: false, maxCents: TRANSACTION_MAX_CENTS });
+      if (!amount.ok) invalid = true;
+      else totals[item.direction === 'income' ? 'income' : 'expense'] += amount.value;
     });
+    this.setData({ smartExpenseTotalText: invalid ? '待核对' : formatCents(totals.expense), smartIncomeTotalText: invalid ? '待核对' : formatCents(totals.income) });
+  },
+
+  handleSmartDraftDirection(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const direction = event.currentTarget.dataset.direction;
+    const draft = this.data.smartEntryDrafts[index];
+    if (!draft || !['expense', 'income'].includes(direction) || draft.direction === direction) return;
+    const categoryOptions = categoriesForDirection(direction);
+    const category = categoryOptions[0];
+    this.setData({
+      [`smartEntryDrafts[${index}].direction`]: direction,
+      [`smartEntryDrafts[${index}].categoryOptions`]: categoryOptions,
+      [`smartEntryDrafts[${index}].categoryId`]: category.id,
+      [`smartEntryDrafts[${index}].categoryLabel`]: category.label,
+      [`smartEntryDrafts[${index}].categoryIndex`]: 0
+    }, () => this.syncSmartTotals());
+  },
+
+  handleDetailsDirection(event) {
+    const detailsDirection = event.currentTarget.dataset.direction;
+    if (!['expense', 'income'].includes(detailsDirection)) return;
+    this.cancelTrendAnimation();
+    const visible = this.data.detailsTransactions.filter((item) => item.direction === detailsDirection);
+    this.setData({ detailsDirection, detailsVisibleTransactions: visible, detailsRecordCount: visible.length }, () => {
+      if (detailsDirection === 'expense') this.drawMonthlyTrend(this.data.detailsAnalysisSummary);
+    });
+  },
+
+  openBudgetExplanation() { this.setData({ budgetExplanationVisible: true }); },
+  closeBudgetExplanation() { this.setData({ budgetExplanationVisible: false }); },
+  editBudgetFromExplanation() {
+    this.closeBudgetExplanation();
+    this.openSettings();
+  },
+
+  async handleReducedMotion(event) {
+    const previous = this.data.themeSettings;
+    const settings = Object.assign({}, previous, { reducedMotion: Boolean(event.detail.value) });
+    this.setData({ themeSettings: settings });
+    this.cancelTrendAnimation();
+    try {
+      this.applyThemeModel(await themeStore.saveTheme(settings));
+    } catch (error) {
+      this.setData({ themeSettings: previous, feedback: '动态效果设置保存失败，请重试。' });
+    }
+  },
+
+  cancelSmartParsing() {
+    this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
+    this.setData({ isSmartParsing: false });
+  },
+
+  openManualEntry() {
+    this.cancelSmartParsing();
+    this.setData({ activeTab: 'settings', 'sections.composer': true });
+    if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ selector: '.apple-manual', duration: this.data.themeSettings.reducedMotion ? 0 : 180 });
+  },
+
+  useManualInput() {
+    this._voiceManualFallback = true;
+    this.stopVoiceRecognition();
+    this.setData({ isVoiceRecording: false, voiceHint: '原文已保留，可以继续打字。' });
   },
 
   handleSmartDraftNote(event) {
@@ -1331,7 +1430,7 @@ Page({
     this.setData({
       [`smartEntryDrafts[${index}].amountInput`]: event.detail.value,
       smartEntryError: ''
-    });
+    }, () => this.syncSmartTotals());
   },
 
   handleSmartDraftCategory(event) {
@@ -1405,6 +1504,7 @@ Page({
       return;
     }
     if (this._voiceStarting) return;
+    this._voiceManualFallback = false;
     this._voiceStarting = true;
     this.setData({
       isVoiceRecording: true,
@@ -1833,6 +1933,7 @@ Page({
   },
 
   applyThemeModel(model) {
+    this.cancelTrendAnimation();
     this.applyThemeChrome(model.resolved);
     this.setData({
       themeDraft: Object.assign({}, model.settings),
@@ -1945,7 +2046,7 @@ Page({
   },
 
   handleThemePreset(event) {
-    this.previewTheme({ presetId: event.currentTarget.dataset.id });
+    this.previewTheme(Object.assign({}, this.data.themeDraft, { presetId: event.currentTarget.dataset.id }));
   },
 
   resetThemeDraft() {

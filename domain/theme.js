@@ -9,7 +9,7 @@ const THEME_PRESETS = Object.freeze([
     scheme: 'light',
     page: '#F5F5F7',
     surface: '#FFFFFF',
-    control: '#E8E8ED',
+    control: '#F2F2F7',
     primary: '#0066CC',
     accent: '#E8E8ED',
     text: '#1D1D1F',
@@ -98,6 +98,7 @@ function isSupportedThemeSettings(settings) {
   if (!settings || typeof settings.presetId !== 'string') return false;
   const presetId = normalizedPresetId(settings.presetId);
   return THEME_PRESETS.some((item) => item.id === presetId)
+    && (settings.reducedMotion === undefined || typeof settings.reducedMotion === 'boolean')
     && isLegacyAdjustmentValid(settings, 'hueShift', -30, 30)
     && isLegacyAdjustmentValid(settings, 'warmth', -10, 10)
     && isLegacyAdjustmentValid(settings, 'brightness', -10, 10);
@@ -108,7 +109,9 @@ function normalizeThemeSettings(settings, sourceSchemaVersion) {
   if (sourceSchemaVersion && sourceSchemaVersion < THEME_SCHEMA_VERSION && source.presetId === 'graphite') {
     return { presetId: 'light' };
   }
-  return { presetId: presetById(normalizedPresetId(source.presetId)).id };
+  const normalized = { presetId: presetById(normalizedPresetId(source.presetId)).id };
+  if (source.reducedMotion !== undefined) normalized.reducedMotion = source.reducedMotion === true;
+  return normalized;
 }
 
 function resolveTheme(settings) {
@@ -132,6 +135,8 @@ function resolveTheme(settings) {
   };
   resolved.styleText = [
     `--theme-page:${resolved.page}`,
+    `--theme-success:${preset.scheme === 'dark' ? '#30D158' : '#248A3D'}`,
+    `--status-danger:${preset.scheme === 'dark' ? '#FF6961' : '#C9342F'}`,
     `--theme-surface:${resolved.surface}`,
     `--theme-control:${resolved.control}`,
     `--theme-primary:${resolved.primary}`,

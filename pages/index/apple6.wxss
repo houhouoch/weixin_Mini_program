@@ -198,3 +198,15 @@
 .advanced-tools .category-chip { width:100%; min-width:0; margin:0!important; padding:0!important; line-height:36rpx; }
 .apple6 .field-error,.apple6 .capture-error,.apple6 .minimal-message--error,.apple6 .minimal-state-inline--error,.drawer-layer .field-error { color:var(--status-danger); }
 .motion-reduced .fold-content,.motion-reduced .review-card,.motion-reduced .receipt-card { animation:none!important; }
+
+/* Save feedback follows committed data; highlight is brief, undo stays available in this session. */
+.apple6 .minimal-transaction { transition:background-color 220ms ease-out; }
+.apple6 .apple-record--saved { background:var(--theme-control); border-radius:16rpx; }
+.apple-save-feedback { margin:20rpx 0; display:flex; align-items:center; gap:20rpx; padding:16rpx 24rpx; border:1rpx solid var(--theme-hairline); border-radius:24rpx; background:var(--theme-surface); box-shadow:0 8rpx 32rpx rgba(0,0,0,.08); }
+.apple-save-feedback>view { flex:1; min-width:0; font-size:25rpx; line-height:38rpx; }
+.apple-save-feedback text { display:block; }
+.apple-save-feedback button { flex-shrink:0; min-width:144rpx; min-height:88rpx; margin:0; padding:0 12rpx; background:transparent; color:var(--theme-primary); font-size:26rpx; display:flex; align-items:center; justify-content:center; }
+.apple-undo-error { color:var(--status-danger); }
+.apple-trend-selection { min-height:64rpx; display:flex; align-items:center; font-size:25rpx; color:var(--theme-muted); }
+.motion-reduced .minimal-transaction { transition:none!important; }
+@media (prefers-reduced-motion:reduce) { .apple6 .minimal-transaction { transition:none!important; } }

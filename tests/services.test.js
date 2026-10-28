@@ -1158,3 +1158,40 @@ test('read and write failures are surfaced instead of pretending success', async
     /disk full/
   );
 });
+
+test('createBatch validates all rows, persists once, is idempotent, and undoCreate is atomic', async () => {
+  const now = new Date();
+  await budgetStore.saveBudget({ incomeCents: 800000, fixedExpenseCents: 80000, savingGoalCents: 200000, historicalSpentBeforeTrackingCents: 0 }, now);
+  const rows = [
+    { amountCents: 5000, categoryId: 'food', direction: 'expense', note: '咖啡', occurredAt: now.getTime() },
+    { amountCents: 2000, categoryId: 'income_side_job', direction: 'income', note: '外快', occurredAt: now.getTime() }
+  ];
+  await assert.rejects(addTransaction({ action: 'createBatch', commandId: 'invalid-batch', transactions: [rows[0], Object.assign({}, rows[1], { amountCents: -1 })] }), /金额无效/);
+  assert.equal((await listTransactions()).length, 0);
+  const command = { action: 'createBatch', commandId: 'valid-batch', transactions: rows };
+  const created = await addTransaction(command);
+  assert.equal(created.createdTransactions.length, 2);
+  assert.equal((await addTransaction(command)).duplicate, true);
+  assert.equal((await listTransactions()).length, 2);
+  const undo = { action: 'undoCreate', commandId: 'undo-valid-batch', transactions: created.createdTransactions };
+  await addTransaction(undo);
+  assert.equal((await listTransactions()).length, 0);
+  assert.equal((await addTransaction(undo)).duplicate, true);
+});
+
+test('failed batch write and failed undo write preserve every existing record', async () => {
+  const storage = makeAdapter(); setStorageAdapterForTests(storage);
+  const now = new Date();
+  await budgetStore.saveBudget({ incomeCents: 800000, fixedExpenseCents: 80000, savingGoalCents: 200000, historicalSpentBeforeTrackingCents: 0 }, now);
+  const rows = [1, 2].map((value) => ({ amountCents: value * 100, categoryId: 'food', direction: 'expense', note: '', occurredAt: now.getTime() }));
+  const save = storage.setStorage; let writes = 0;
+  storage.setStorage = () => { writes += 1; throw new Error('disk full'); };
+  await assert.rejects(addTransaction({ action: 'createBatch', commandId: 'failed-save', transactions: rows }));
+  assert.equal(writes, 1);
+  assert.equal((await listTransactions()).length, 0);
+  storage.setStorage = save;
+  const result = await addTransaction({ action: 'createBatch', commandId: 'saved', transactions: rows });
+  storage.setStorage = () => { throw new Error('disk full'); };
+  await assert.rejects(addTransaction({ action: 'undoCreate', commandId: 'failed-undo', transactions: result.createdTransactions }));
+  assert.equal((await listTransactions()).length, 2);
+});

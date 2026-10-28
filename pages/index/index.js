@@ -361,6 +361,11 @@ Page({
     drawerMode: 'first',
     drawerVisible: false,
     feedback: '',
+    undoCount: 0,
+    undoError: '',
+    isUndoing: false,
+    highlightedTransactions: {},
+    heroDisplayText: '',
     form: emptyForm(),
     formErrors: EMPTY_ERRORS,
     fixedExpenseItemTotalText: '0.00',
@@ -478,12 +483,16 @@ Page({
   },
 
   onHide() {
+    this._pageHidden = true;
+    this.clearSaveFeedback();
     this._voiceManualFallback = true;
     this.cancelTrendAnimation();
     this.stopVoiceRecognition();
   },
 
   onUnload() {
+    this._pageHidden = true;
+    this.clearSaveFeedback();
     this.cancelTrendAnimation();
     this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
     this.stopVoiceRecognition();
@@ -582,6 +591,7 @@ Page({
   },
 
   onShow() {
+    this._pageHidden = false;
     this.refreshPage();
   },
 
@@ -683,12 +693,14 @@ Page({
     const presentation = statusPresentation(result, spentProgressPercent);
     const amountText = presentation.amountText;
     const selectedMonthState = detailsMonthState(this.data.detailsMonthKey, now);
+    this.stopAmountAnimation();
 
     this.setData({
       amountSizeClass: amountText.length > 9
         ? 'amount-small'
         : amountText.length > 7 ? 'amount-medium' : 'amount-normal',
       budget,
+      heroDisplayText: '',
       budgetFixedExpenseText: formatCents(budget.fixedExpenseCents),
       budgetIncomeText: formatCents(budget.incomeCents),
       budgetSavingGoalText: formatCents(budget.savingGoalCents),
@@ -814,6 +826,7 @@ Page({
 
   handleDetailsMonthChange(event) {
     this.cancelTrendAnimation();
+    this._trendPlot = null;
     const offset = Number(event.currentTarget.dataset.offset);
     if (offset !== -1 && offset !== 1) return;
     const nextKey = shiftMonthKey(this.data.detailsMonthKey, offset);
@@ -840,7 +853,45 @@ Page({
   },
 
   handleDetailsCalendarDay(event) {
-    const dateKey = event.currentTarget.dataset.dateKey;
+    return this.selectDetailsDay(event.currentTarget.dataset.dateKey);
+  },
+
+  handleTrendTouchStart(event) {
+    this._trendTouchStart = (event.touches || [])[0] || null;
+  },
+
+  handleTrendTouch(event) {
+    const plot = this._trendPlot;
+    const start = this._trendTouchStart;
+    this._trendTouchStart = null;
+    if (!plot || plot.monthKey !== this.data.detailsMonthKey || this.data.detailsAnalysisLoading) return;
+    const touch = (event.changedTouches || [])[0];
+    if (!start || !touch) return;
+    const relative = Number.isFinite(touch.x) && Number.isFinite(start.x);
+    const x = relative ? touch.x : touch.clientX;
+    const y = relative ? touch.y : touch.clientY;
+    const startX = relative ? start.x : start.clientX;
+    const startY = relative ? start.y : start.clientY;
+    if (![x, y, startX, startY].every(Number.isFinite)
+      || Math.abs(x - startX) > 10 || Math.abs(y - startY) > 10) return;
+    const selectAt = (localX, localY) => {
+      if (plot.monthKey !== this.data.detailsMonthKey || localX < 0 || localX > plot.width || localY < 0 || localY > plot.height) return;
+      const day = Math.round((localX - 4) * Math.max(plot.days - 1, 1) / (plot.width - 8)) + 1;
+      if (day < 1 || day > plot.days) return;
+      return this.selectDetailsDay(`${plot.monthKey}-${String(day).padStart(2, '0')}`);
+    };
+    if (relative) return selectAt(x, y);
+    if (typeof this.createSelectorQuery !== 'function') return;
+    // Canvas 2D can emit viewport coordinates; measure after scrolling instead of caching offsets.
+    return new Promise((resolve) => {
+      this.createSelectorQuery().select('#monthlyTrendCanvas').boundingClientRect().exec((results) => {
+        const rect = results && results[0];
+        resolve(rect ? selectAt(x - rect.left, y - rect.top) : undefined);
+      });
+    });
+  },
+
+  selectDetailsDay(dateKey) {
     const date = parseLocalDateKey(dateKey);
     if (!date
       || dateKey.slice(0, 7) !== this.data.detailsMonthKey
@@ -849,7 +900,8 @@ Page({
       detailsDayDateKey: dateKey,
       detailsDayDateLabel: formatChineseDate(date),
       detailsDayVisible: true
-    }, () => this.refreshDetailsCalendarDay(dateKey));
+    }, () => this.drawMonthlyTrend(this.data.detailsAnalysisSummary, true));
+    return this.refreshDetailsCalendarDay(dateKey);
   },
 
   async refreshDetailsCalendarDay(dateKey) {
@@ -950,7 +1002,7 @@ Page({
         monthKey: toMonthKey(selectedMonth)
       });
       if (requestId !== this._detailsAnalysisReadId) return;
-      this.setData({ detailsAnalysisSummary }, () => {
+      this.setData({ detailsAnalysisSummary, detailsAnalysisLoading: false }, () => {
         if (this.data.activeTab === 'details') this.drawMonthlyTrend(detailsAnalysisSummary);
       });
     } catch (error) {
@@ -1007,7 +1059,7 @@ Page({
     }
   },
 
-  drawMonthlyTrend(summary) {
+  drawMonthlyTrend(summary, immediate) {
     this.cancelTrendAnimation();
     const renderId = this._trendRenderId;
     const points = summary && summary.dailyTrend || [];
@@ -1031,6 +1083,7 @@ Page({
         const height = target.height;
         const theme = this.data.themeResolved;
         const plotWidth = width - 44;
+        this._trendPlot = { width: plotWidth, height, days: points.length, monthKey: this.data.detailsMonthKey };
         const top = 24;
         const bottom = height - 16;
         const max = Math.max(100, ...valid.map((item) => item.amountCents));
@@ -1063,8 +1116,19 @@ Page({
           const last = coords[coords.length - 1];
           context.beginPath(); context.arc(last.x, last.y, 3, 0, Math.PI * 2); context.fillStyle = theme.primary; context.fill();
           context.restore();
+          const selectedIndex = valid.findIndex((point) => this.data.detailsDayVisible
+            && `${this.data.detailsMonthKey}-${String(point.day).padStart(2, '0')}` === this.data.detailsDayDateKey);
+          if (selectedIndex >= 0 && progress === 1) {
+            const point = coords[selectedIndex];
+            context.beginPath(); context.moveTo(point.x, top); context.lineTo(point.x, bottom);
+            context.strokeStyle = theme.primary; context.lineWidth = 1; context.stroke();
+            context.beginPath(); context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+            context.fillStyle = theme.surface; context.fill(); context.stroke();
+            context.beginPath(); context.arc(point.x, point.y, 3, 0, Math.PI * 2);
+            context.fillStyle = theme.primary; context.fill();
+          }
         };
-        const reduced = this.data.themeSettings.reducedMotion || typeof canvas.requestAnimationFrame !== 'function';
+        const reduced = immediate || this.data.themeSettings.reducedMotion || typeof canvas.requestAnimationFrame !== 'function';
         if (reduced) { draw(1); return; }
         const started = Date.now();
         const tick = () => {
@@ -1564,87 +1628,109 @@ Page({
     this.setData({ noteInput: event.detail.value, feedback: '' });
   },
 
+  stopAmountAnimation() {
+    clearTimeout(this._amountTimer);
+    this._amountTimer = undefined;
+  },
+
+  clearSaveFeedback() {
+    this.stopAmountAnimation();
+    clearTimeout(this._highlightTimer);
+    this._undoTransactions = null;
+    this.setData({ undoCount: 0, undoError: '', highlightedTransactions: {}, heroDisplayText: '' });
+  },
+
+  animateSavedAmount(previous) {
+    this.stopAmountAnimation();
+    const current = this.data.result;
+    // Switching between remaining and overspent is semantic: show the final state immediately.
+    if (!previous || !current || this._pageHidden || this.data.themeSettings.reducedMotion
+      || !['normal', 'runningLow'].includes(previous.status) || !['normal', 'runningLow'].includes(current.status)) return;
+    const from = parseYuanToCents(previous.todayRemainingText.replace(/,/g, ''));
+    const to = parseYuanToCents(current.todayRemainingText.replace(/,/g, ''));
+    if (!from.ok || !to.ok || from.value === to.value) return;
+    const started = Date.now();
+    const tick = () => {
+      const progress = Math.min(1, (Date.now() - started) / 220);
+      const cents = Math.round(from.value + (to.value - from.value) * (1 - Math.pow(1 - progress, 3)));
+      this.setData({ heroDisplayText: progress === 1 ? '' : `¥${formatCents(cents)}` });
+      if (progress < 1) this._amountTimer = setTimeout(tick, 16);
+    };
+    tick();
+  },
+
   async saveTransactionDrafts(drafts, entry) {
-    if (this._transactionInFlight || this.data.isSaving) {
+    if (this._transactionInFlight || this.data.isSaving || this.data.isUndoing) {
       return { ok: false, error: '正在保存，请稍候。' };
     }
     this._transactionInFlight = true;
+    const previous = this.data.result;
     this.setData({ isSaving: true, inputError: '', feedback: '' });
+    let persisted = false;
     try {
-      let duplicateCount = 0;
-      for (const draft of drafts) {
-        const result = await addTransaction({
-          action: 'create',
-          amountCents: draft.amountCents,
-          categoryId: draft.categoryId,
-          commandId: commandId('create'),
-          direction: draft.direction,
-          note: draft.note,
-          occurredAt: draft.occurredAt || Date.now()
-        });
-        if (result.duplicate) duplicateCount += 1;
+      const result = await addTransaction({
+        action: 'createBatch', commandId: commandId('create-batch'),
+        transactions: drafts.map((draft) => ({
+          amountCents: draft.amountCents, categoryId: draft.categoryId,
+          direction: draft.direction, note: draft.note, occurredAt: draft.occurredAt || Date.now()
+        }))
+      });
+      persisted = true;
+      this.clearSaveFeedback();
+      const created = result.createdTransactions || [];
+      if (!this._pageHidden) {
+        this._undoTransactions = created;
+        const highlightedTransactions = {};
+        created.forEach((item) => { highlightedTransactions[item.id] = true; });
+        this.setData({ undoCount: created.length, highlightedTransactions });
+        this._highlightTimer = setTimeout(() => this.setData({ highlightedTransactions: {} }), 1800);
       }
-      await this.refreshAfterMutation();
-      this.setData({
-        feedback: duplicateCount === drafts.length
-          ? '这些记录已经保存过了。'
-          : `已记下 ${drafts.length - duplicateCount} 笔，今日额度已更新。`
-      });
-      trackEvent('transaction_batch_saved', {
-        count: drafts.length,
-        entry: entry || 'smart_text',
-        result: duplicateCount ? 'partial_duplicate' : 'success'
-      });
-      return { ok: true, duplicateCount };
+      // Persistence has succeeded. A refresh error must never invite saving the same drafts again.
+      let refreshFailed = false;
+      try { await this.refreshAfterMutation(); } catch (error) { refreshFailed = true; }
+      if (!refreshFailed) this.animateSavedAmount(previous);
+      this.setData({ feedback: result.duplicate ? '这些记录已经保存过了。'
+        : refreshFailed ? '账单已保存，页面刷新失败，请重新打开查看。'
+          : `已记下 ${created.length} 笔，额度已更新。` });
+      trackEvent('transaction_batch_saved', { count: created.length, entry: entry || 'manual_form', result: 'success' });
+      return { ok: true, duplicate: result.duplicate };
     } catch (error) {
-      console.error('批量保存交易失败', error);
-      return { ok: false, error: '保存失败，请重试' };
+      if (persisted) {
+        this.setData({ feedback: '账单已保存，请重新打开查看最新数据。' });
+        return { ok: true };
+      }
+      return { ok: false, error: '保存失败，本次未写入，请重试。' };
     } finally {
       this._transactionInFlight = false;
       this.setData({ isSaving: false });
     }
   },
 
-  async saveTransactionDraft(draft, entry) {
-    if (this._transactionInFlight || this.data.isSaving) {
-      return { ok: false, error: '正在保存，请稍候。' };
-    }
-
-    const now = new Date();
-    const direction = draft.direction;
+  async undoLastEntry() {
+    if (!this._undoTransactions || !this._undoTransactions.length || this._transactionInFlight || this.data.isSaving || this.data.isUndoing) return;
     this._transactionInFlight = true;
-    this.setData({ isSaving: true, inputError: '', feedback: '' });
+    const previous = this.data.result;
+    this.setData({ isUndoing: true, undoError: '' });
     try {
-      const result = await addTransaction({
-        action: 'create',
-        amountCents: draft.amountCents,
-        categoryId: draft.categoryId,
-        commandId: commandId('create'),
-        direction,
-        note: draft.note,
-        occurredAt: draft.occurredAt || now.getTime()
-      });
-      await this.refreshAfterMutation();
-      this.setData({
-        feedback: result.duplicate
-          ? '这笔记录已经保存过了。'
-          : direction === 'income'
-            ? `已记下，额外收入已加入${this.data.result.periodLabel}可用额度。`
-            : '已记下，今日额度已更新。'
-      });
-      trackEvent('transaction_saved', {
-        direction,
-        entry: entry || 'manual_form',
-        result: result.duplicate ? 'duplicate' : 'success'
-      });
-      return { ok: true, duplicate: result.duplicate };
+      await addTransaction({ action: 'undoCreate', commandId: commandId('undo-create'), transactions: this._undoTransactions });
+      this.clearSaveFeedback();
+      try {
+        await this.refreshAfterMutation();
+        this.animateSavedAmount(previous);
+        this.setData({ feedback: '已撤销本次记账，额度已恢复。' });
+      } catch (error) {
+        this.setData({ feedback: '已撤销本次记账，请重新打开查看最新额度。' });
+      }
     } catch (error) {
-      console.error('保存交易失败', error);
-      return { ok: false, error: '保存失败，请重试' };
+      this.setData({ undoError: error.message || '撤销失败，记录未变，请重试。' });
     } finally {
       this._transactionInFlight = false;
-      this.setData({ isSaving: false });
+      this.setData({ isUndoing: false });
     }
+  },
+
+  async saveTransactionDraft(draft, entry) {
+    return this.saveTransactionDrafts([draft], entry);
   },
 
   async handleAddTransaction() {
@@ -1702,37 +1788,10 @@ Page({
   },
 
   async useQuickTemplate(event) {
-    if (this._transactionInFlight || this.data.isSaving) return;
-    const template = this.data.quickTemplates
-      .find((item) => item.id === event.currentTarget.dataset.id);
+    const template = this.data.quickTemplates.find((item) => item.id === event.currentTarget.dataset.id);
     if (!template) return;
-    this._transactionInFlight = true;
-    this.setData({ isSaving: true, inputError: '', feedback: '' });
-    try {
-      const result = await addTransaction({
-        action: 'create',
-        amountCents: template.amountCents,
-        categoryId: template.categoryId,
-        commandId: commandId('template-create'),
-        direction: template.direction,
-        note: template.note,
-        occurredAt: Date.now()
-      });
-      this.setData({
-        feedback: result.duplicate ? '这笔记录已经保存过了。' : `已用“${template.title}”记一笔。`
-      });
-      await this.refreshAfterMutation();
-      trackEvent('transaction_saved', {
-        direction: template.direction,
-        entry: 'quick_template',
-        result: result.duplicate ? 'duplicate' : 'success'
-      });
-    } catch (error) {
-      this.setData({ inputError: '模板记账失败，请重试', feedback: '' });
-    } finally {
-      this._transactionInFlight = false;
-      this.setData({ isSaving: false });
-    }
+    const result = await this.saveTransactionDraft(template, 'quick_template');
+    if (!result.ok) this.setData({ inputError: result.error });
   },
 
   deleteQuickTemplate(event) {

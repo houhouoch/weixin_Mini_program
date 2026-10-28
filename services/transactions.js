@@ -44,6 +44,24 @@ function assertCommand(command) {
   if (!command || typeof command.commandId !== 'string' || !command.commandId) {
     throw new Error('交易命令缺少唯一标识');
   }
+  if (command.action === 'createBatch') {
+    if (!Array.isArray(command.transactions) || !command.transactions.length || command.transactions.length > 10) {
+      throw new Error('一次最多记录 10 笔');
+    }
+    command.transactions.forEach(assertTransactionFields);
+    return;
+  }
+  if (command.action === 'undoCreate') {
+    if (!Array.isArray(command.transactions) || !command.transactions.length || command.transactions.length > 10
+      || new Set(command.transactions.map((item) => item.id)).size !== command.transactions.length) {
+      throw new Error('本次记账的撤销凭据无效');
+    }
+    command.transactions.forEach((item) => {
+      assertTransactionFields(item);
+      if (typeof item.id !== 'string' || !item.id) throw new Error('本次记账的撤销凭据无效');
+    });
+    return;
+  }
   if (command.action === 'create') {
     assertTransactionFields(command);
     return;
@@ -251,7 +269,7 @@ async function executeCommand(command) {
   assertCommand(command);
   const result = await readState();
   if (!result.state
-    || ((command.action === 'create' || command.action === 'import') && !result.state.budget)) {
+    || ((command.action === 'create' || command.action === 'createBatch' || command.action === 'import') && !result.state.budget)) {
     throw new Error('请先完成本月设置');
   }
   let state = result.state;
@@ -260,7 +278,24 @@ async function executeCommand(command) {
   }
 
   let importResult = null;
-  if (command.action === 'create') {
+  let createdTransactions = [];
+  if (command.action === 'createBatch') {
+    createdTransactions = command.transactions.map((item, index) => transactionFromCommand(Object.assign({}, item, {
+      commandId: `${command.commandId}-${index}`, transactionId: `${command.commandId}-${index}`
+    })));
+    state = Object.assign({}, state, { transactions: state.transactions.concat(createdTransactions) });
+  } else if (command.action === 'undoCreate') {
+    // Validate the whole batch before changing anything, including archived records.
+    command.transactions.forEach((expected) => {
+      const location = locateTransaction(state, expected.id);
+      const actual = location && (location.kind === 'current' ? state.transactions[location.index]
+        : state.history[location.historyIndex].transactions[location.index]);
+      if (!actual || ['amountCents', 'categoryId', 'direction', 'note', 'occurredAt'].some((key) => actual[key] !== expected[key])) {
+        throw new Error('本次记录已被修改或删除，请在账单中逐笔处理。');
+      }
+    });
+    command.transactions.forEach((item) => { state = deleteLocatedTransaction(state, locateTransaction(state, item.id)); });
+  } else if (command.action === 'create') {
     state = Object.assign({}, state, {
       transactions: state.transactions.concat(transactionFromCommand(command))
     });
@@ -288,6 +323,7 @@ async function executeCommand(command) {
   await saveState(state);
   return Object.assign({
     duplicate: false,
+    createdTransactions,
     transactions: sortedTransactions(state.transactions)
   }, importResult ? {
     duplicateCount: importResult.duplicateCount,

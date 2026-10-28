@@ -16,7 +16,7 @@
       </view>
       <view class="minimal-balance">
         <text class="minimal-balance__label">{{result.heroEyebrow}}</text>
-        <text class="minimal-balance__amount {{amountSizeClass}}">{{result.heroAmountText}}</text>
+        <text class="minimal-balance__amount {{amountSizeClass}}">{{heroDisplayText || result.heroAmountText}}</text>
         <view class="apple-daily-metrics">
           <text>今日已花 ¥{{result.todaySpentText}}</text>
           <text>日均额度 ¥{{result.todaySuggestedBudgetText}}</text>
@@ -69,7 +69,11 @@
       </view>
       <text class="minimal-message minimal-message--error" wx:if="{{smartEntryError}}" aria-role="alert">{{smartEntryError}}</text>
       <text class="minimal-message" wx:if="{{voiceHint}}">{{voiceHint}}</text>
-      <text class="minimal-message minimal-message--success" wx:if="{{feedback}}">{{feedback}}</text>
+      <text class="minimal-message minimal-message--success" wx:if="{{feedback && !undoCount}}">{{feedback}}</text>
+      <view class="apple-save-feedback" wx:if="{{undoCount}}" aria-role="status">
+        <view><text>{{feedback}}</text><text class="apple-undo-error" wx:if="{{undoError}}">{{undoError}}</text></view>
+        <button bindtap="undoLastEntry" disabled="{{isSaving || isUndoing}}" loading="{{isUndoing}}" aria-label="撤销本次记账，共{{undoCount}}笔">撤销 {{undoCount}} 笔</button>
+      </view>
       <text class="minimal-entry__income-note">确认后才保存 · 账本保存在本机；固定收入无需重复记录。</text>
       <text class="minimal-entry__income-note">文字与语音会发送至阿里云千问整理；不可用可手动记账。</text>
       <button class="minimal-link apple-manual-entry" bindtap="openManualEntry">手动填写金额与分类 ›</button>
@@ -80,7 +84,7 @@
         </view>
         <view class="minimal-empty" wx:if="{{recentTransactions.length === 0}}">还没有记录，先记下第一笔。</view>
         <view wx:else>
-          <view class="minimal-transaction" wx:for="{{recentTransactions}}" wx:key="id">
+          <view class="minimal-transaction {{highlightedTransactions[item.id] ? 'apple-record--saved' : ''}}" wx:for="{{recentTransactions}}" wx:key="id">
             <view class="apple-category-icon">
               <image src="/assets/icons/apple6/transaction{{themeResolved.scheme === 'dark' ? '-graphite' : ''}}.svg" mode="aspectFit" />
             </view>
@@ -186,7 +190,11 @@
                 <text>{{item.value}}</text>
               </view>
             </view>
-            <canvas type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="{{detailsMonthLabel}}每日支出走势曲线" />
+            <view class="apple-trend-selection" aria-role="status">
+              <text wx:if="{{detailsDayVisible}}">{{detailsDayDateLabel}} · {{detailsDayLoading ? '读取中…' : (detailsDayError ? '读取失败' : '支出 ¥' + detailsDayExpenseText)}}</text>
+              <text wx:else>轻点曲线，查看当天支出</text>
+            </view>
+            <canvas bindtouchstart="handleTrendTouchStart" bindtouchend="handleTrendTouch" type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="{{detailsMonthLabel}}每日支出走势曲线" />
             <view class="spending-trend__labels">
               <text wx:for="{{detailsAnalysisSummary.trendLabels}}" wx:key="day">{{item.label}}</text>
             </view>
@@ -209,7 +217,7 @@
       <view class="minimal-state-inline minimal-state-inline--error" wx:elif="{{detailsError}}">{{detailsError}}</view>
       <view class="minimal-empty" wx:elif="{{detailsVisibleTransactions.length === 0}}">这个范围内还没有{{detailsDirection === 'income' ? '收入' : '支出'}}记录。</view>
       <view class="minimal-transaction-list" wx:else>
-        <view class="minimal-transaction minimal-transaction--details" wx:for="{{detailsVisibleTransactions}}" wx:key="id">
+        <view class="minimal-transaction minimal-transaction--details {{highlightedTransactions[item.id] ? 'apple-record--saved' : ''}}" wx:for="{{detailsVisibleTransactions}}" wx:key="id">
           <view class="apple-category-icon">
             <image src="/assets/icons/apple6/transaction{{themeResolved.scheme === 'dark' ? '-graphite' : ''}}.svg" mode="aspectFit" />
           </view>
@@ -350,6 +358,10 @@
                 <input class="composer-amount__input" type="digit" value="{{amountInput}}" placeholder="0.00" maxlength="10" bindinput="handleAmountInput" confirm-type="done" />
               </view>
               <button class="composer-save" bindtap="handleAddTransaction" disabled="{{isSaving}}" loading="{{isSaving}}">{{recordDirection === 'income' ? '记收入' : '记支出'}}</button>
+            </view>
+            <view class="apple-save-feedback" wx:if="{{undoCount}}" aria-role="status">
+              <view><text>{{feedback}}</text><text class="apple-undo-error" wx:if="{{undoError}}">{{undoError}}</text></view>
+              <button bindtap="undoLastEntry" disabled="{{isSaving || isUndoing}}" loading="{{isUndoing}}" aria-label="撤销本次记账，共{{undoCount}}笔">撤销 {{undoCount}} 笔</button>
             </view>
             <text class="field-error" wx:if="{{inputError}}">{{inputError}}</text>
             <view class="quick-templates" wx:if="{{quickTemplates.length}}">
@@ -612,7 +624,7 @@
       </view>
       <text class="minimal-message minimal-message--error" wx:if="{{exportError}}">{{exportError}}</text>
       <text class="minimal-message minimal-message--error" wx:if="{{backupError}}">{{backupError}}</text>
-      <text class="minimal-message" wx:if="{{feedback}}">{{feedback}}</text>
+      <text class="minimal-message" wx:if="{{feedback && !undoCount}}">{{feedback}}</text>
     </view>
     <view class="minimal-tabbar" role="tablist" aria-label="页面导航">
       <button class="minimal-tabbar__item {{activeTab === 'home' ? 'minimal-tabbar__item--active' : ''}}" data-tab="home" bindtap="switchTab">
@@ -807,7 +819,7 @@
       </view>
       <text class="smart-message smart-message--error" wx:if="{{smartEntryError}}" aria-role="alert">{{smartEntryError}}</text>
       <text class="smart-message" wx:if="{{voiceHint}}">{{voiceHint}}</text>
-      <text class="smart-message smart-message--success" wx:if="{{feedback}}">{{feedback}}</text>
+      <text class="smart-message smart-message--success" wx:if="{{feedback && !undoCount}}">{{feedback}}</text>
       <button class="smart-details-toggle" data-section="composer" bindtap="toggleSection" aria-label="{{sections.composer ? '收起手动明细' : '展开手动明细'}}" >
         <text>手动填写分类与金额</text>
         <text class="smart-details-toggle__action">{{sections.composer ? '收起' : '展开'}}</text>

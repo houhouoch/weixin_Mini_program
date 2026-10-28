@@ -210,3 +210,6 @@
 .apple-trend-selection { min-height:64rpx; display:flex; align-items:center; font-size:25rpx; color:var(--theme-muted); }
 .motion-reduced .minimal-transaction { transition:none!important; }
 @media (prefers-reduced-motion:reduce) { .apple6 .minimal-transaction { transition:none!important; } }
+
+.spending-month-return { min-height:88rpx; min-width:176rpx; padding:0 16rpx; margin:0; display:flex; align-items:center; justify-content:center; background:transparent; color:var(--theme-primary); font-size:25rpx; }
+.minimal-analysis>.spending-day-detail { margin-top:24rpx; }

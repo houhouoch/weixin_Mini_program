@@ -263,3 +263,66 @@ test('canvas viewport touch coordinates are translated using the current scrolle
   await page.handleTrendTouch({ changedTouches: [{ clientX: 47, clientY: 269 }] });
   assert.equal(page.data.detailsDayDateKey, `${month}-01`);
 });
+
+test('horizontal scrubbing previews continuously without reading storage, commits once on release and clamps at month edges', async () => {
+  const page = instance(); const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  page.data.detailsMonthKey = month;
+  page.data.detailsAnalysisSummary = { dailyTrend: Array.from({ length: days }, (_, i) => ({ day: i + 1, amountCents: (i + 1) * 123 })) };
+  page._trendPlot = { monthKey: month, width: 300, height: 180, days };
+  let reads = 0; page.refreshDetailsCalendarDay = async () => { reads += 1; };
+  page._drawTrendSelection = () => {};
+  page.handleTrendTouchStart({ touches: [{ x: 4, y: 80 }] });
+  await page.handleTrendTouchMove({ touches: [{ x: 80, y: 82 }] });
+  assert.equal(page.data.trendScrubbing, true);
+  assert.notEqual(page.data.trendDateKey, '');
+  assert.equal(page.data.trendAmountText, ((Number(page.data.trendDateKey.slice(-2)) * 123) / 100).toFixed(2));
+  assert.equal(reads, 0);
+  await page.handleTrendTouchMove({ touches: [{ x: 900, y: 100 }] });
+  assert.equal(page.data.trendDateKey, `${month}-${String(now.getDate()).padStart(2, '0')}`);
+  await page.handleTrendTouchMove({ touches: [{ x: -30, y: 90 }] });
+  assert.equal(page.data.trendDateKey, `${month}-01`);
+  await page.handleTrendTouch({ changedTouches: [{ x: -30, y: 90 }] });
+  assert.equal(reads, 1);
+  assert.equal(page.data.detailsDayDateKey, `${month}-01`);
+  assert.equal(page.data.trendScrubbing, false);
+  assert.equal(page._trendGesture, null);
+});
+
+test('vertical scroll, multitouch and cancellation never commit a chart selection', async () => {
+  const page = instance(); page.data.detailsMonthKey = '2026-01';
+  page._trendPlot = { monthKey: '2026-01', width: 300, height: 180, days: 31 };
+  page._drawTrendSelection = () => {};
+  let reads = 0; page.refreshDetailsCalendarDay = async () => { reads += 1; };
+  page.handleTrendTouchStart({ touches: [{ x: 40, y: 80 }] });
+  await page.handleTrendTouchMove({ touches: [{ x: 42, y: 120 }] });
+  await page.handleTrendTouchMove({ touches: [{ x: 240, y: 125 }] });
+  assert.equal(page.data.trendScrubbing, false);
+  await page.handleTrendTouch({ changedTouches: [{ x: 240, y: 125 }] });
+  page.handleTrendTouchStart({ touches: [{ x: 40, y: 80 }] });
+  await page.handleTrendTouchMove({ touches: [{ x: 80, y: 80 }] });
+  page.handleTrendTouchMove({ touches: [{ x: 80, y: 80 }, { x: 90, y: 80 }] });
+  assert.equal(page.data.trendScrubbing, false);
+  await page.handleTrendTouch({ changedTouches: [{ x: 80, y: 80 }] });
+  assert.equal(reads, 0);
+  assert.equal(page.data.trendDateKey, '');
+});
+
+test('late chart measurements cannot restore selection after cancel and return-to-month clears old detail', async () => {
+  const page = instance(); page.data.detailsMonthKey = '2026-01';
+  page._trendPlot = { monthKey: '2026-01', width: 300, height: 180, days: 31 };
+  let measure;
+  page.createSelectorQuery = () => ({ select() { return this; }, boundingClientRect() { return this; }, exec(fn) { measure = fn; } });
+  page.handleTrendTouchStart({ touches: [{ clientX: 50, clientY: 80 }] });
+  const pending = page.handleTrendTouchMove({ touches: [{ clientX: 150, clientY: 80 }] });
+  page.cancelTrendGesture(); measure([{ left: 40, top: 0 }]); await pending;
+  assert.equal(page.data.trendDateKey, '');
+  page.data.detailsDayVisible = true; page.data.detailsDayDateKey = '2026-01-15';
+  page.refreshDetails = () => {}; page.refreshDetailsAnalysis = () => {};
+  page.returnToCurrentMonth();
+  const now = new Date();
+  assert.equal(page.data.detailsMonthKey, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  assert.equal(page.data.detailsDayVisible, false);
+  assert.equal(page._trendPlot, null);
+});

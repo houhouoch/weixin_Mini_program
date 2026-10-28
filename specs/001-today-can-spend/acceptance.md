@@ -198,3 +198,13 @@ Apple 外观设置重构已完成 51 项 Node 测试、结构/语法、对比度
 原生回归脚本完成 10 项断言，另补手动录入与几何核对。CLI touchend 曾返回 0,0 坐标，未作为通过证据；改用真实 GUI 点击并读取页面选中状态验证。开发者工具会话更新期间短暂出现 terminated，恢复连接后完成最终检查。
 
 截图与原生回归记录位于 `/Users/houhou/.codex/visualizations/2026/10/28/weixin-interactions/`，其中图表金额为已清理的临时测试记录。保存凭据在当前页面会话中使用，不新增永久交易字段，不改变原预算公式。
+
+## 曲线连续拖动验收（2026-10-28）
+
+- 72/72 Node 测试、结构检查、Git diff 检查及微信官方 WXML/WXSS 编译通过。
+- 11 项原生回归断言通过。用开发者工具视口坐标 touchstart/touchmove/touchend 验证：松手前处于横向查看状态、日期随第二次移动更新、松手提交最后日期、明细展开前后图表 top 不变、纵向移动不锁页面/不改变选中日期、往月与回到本月、石墨拖动释放、账本不变。
+- 纵向移动的画布 top 实测变化 -65px，证明页面仍滚动；并非仅测试处理函数。截图保存在 `/Users/houhou/.codex/visualizations/2026/10/28/weixin-drag/`。浅色/石墨均检查了松手前的预览状态，测试后恢复浅色和首页，未新增或删除账单。
+- 最终 Console grep -Ei "error|warn" 无匹配。auto_preview 成功推送 484194 字节手机预览包，本次不上传或发布正式版。
+- 真实手机的斜向起手、长距离拖动、系统中断与屏幕边缘仍待用户验收；模拟器坐标触摸不等于手机手持测试。
+
+手势实现依据微信 Canvas 文档中 bind:touchmove 与 disable-scroll 能力：https://developers.weixin.qq.com/miniprogram/dev/component/canvas.html 。只在横向意图确定后锁定画布滚动，结束和取消均释放。

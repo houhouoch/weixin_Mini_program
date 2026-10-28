@@ -130,7 +130,8 @@
           <button class="spending-month-nav__button" data-offset="-1" bindtap="handleDetailsMonthChange" disabled="{{!detailsMonthCanPrevious}}" aria-label="查看上个月" >‹</button>
           <view class="spending-month-nav__copy">
             <text class="spending-month-nav__title">{{detailsMonthLabel}}</text>
-            <text class="spending-month-nav__context">{{detailsMonthContext}}</text>
+            <button wx:if="{{detailsMonthCanNext}}" class="spending-month-return" bindtap="returnToCurrentMonth" aria-label="回到本月">回到本月</button>
+            <text wx:else class="spending-month-nav__context">{{detailsMonthContext}}</text>
           </view>
           <button class="spending-month-nav__button" data-offset="1" bindtap="handleDetailsMonthChange" disabled="{{!detailsMonthCanNext}}" aria-label="查看下个月" >›</button>
         </view>
@@ -148,32 +149,11 @@
             <view class="spending-calendar__grid">
               <block wx:for="{{detailsAnalysisSummary.calendarDays}}" wx:key="key">
                 <view class="spending-calendar__day spending-calendar__day--blank" wx:if="{{item.isBlank}}"></view>
-                <button wx:else class="spending-calendar__day {{item.isToday ? 'spending-calendar__day--today' : ''}} {{item.isHigh ? 'spending-calendar__day--high' : ''}} {{detailsDayVisible && detailsDayDateKey === item.key ? 'spending-calendar__day--selected' : ''}}" data-date-key="{{item.key}}" bindtap="handleDetailsCalendarDay" disabled="{{item.isFuture}}" aria-label="{{item.day}}日{{item.hasAmount ? '支出' + item.amountText : '没有支出'}}" >
+                <button wx:else class="spending-calendar__day {{item.isToday ? 'spending-calendar__day--today' : ''}} {{item.isHigh ? 'spending-calendar__day--high' : ''}} {{(trendDateKey || detailsDayDateKey) === item.key ? 'spending-calendar__day--selected' : ''}}" data-date-key="{{item.key}}" bindtap="handleDetailsCalendarDay" disabled="{{item.isFuture}}" aria-label="{{item.day}}日{{item.hasAmount ? '支出' + item.amountText : '没有支出'}}" >
                   <text class="spending-calendar__date">{{item.day}}</text>
                   <text class="spending-calendar__amount">{{item.isFuture ? '—' : (item.hasAmount ? item.amountText : '¥0')}}</text>
                 </button>
               </block>
-            </view>
-            <view class="spending-day-detail" wx:if="{{detailsDayVisible}}">
-              <view class="spending-day-detail__heading">
-                <view>
-                  <text class="spending-day-detail__title">{{detailsDayDateLabel}}</text>
-                  <text class="spending-day-detail__copy">当天支出</text>
-                </view>
-                <text class="spending-day-detail__total">¥{{detailsDayExpenseText}}</text>
-              </view>
-              <view class="spending-day-detail__state" wx:if="{{detailsDayLoading}}">正在读取当天支出…</view>
-              <view class="spending-day-detail__state spending-day-detail__state--error" wx:elif="{{detailsDayError}}">{{detailsDayError}}</view>
-              <view class="spending-day-detail__state" wx:elif="{{detailsDayTransactions.length === 0}}">当天没有支出。</view>
-              <view class="spending-day-detail__list" wx:else>
-                <view class="spending-day-detail__row" wx:for="{{detailsDayTransactions}}" wx:key="id">
-                  <view>
-                    <text class="spending-day-detail__name">{{item.purposeText}}</text>
-                    <text class="spending-day-detail__meta">{{item.categoryLabel}} · {{item.occurredAtText}}</text>
-                  </view>
-                  <text class="spending-day-detail__amount">−¥{{item.amountText}}</text>
-                </view>
-              </view>
             </view>
           </view>
           <view class="spending-trend" wx:if="{{detailsAnalysisSummary.period === 'month'}}">
@@ -191,12 +171,34 @@
               </view>
             </view>
             <view class="apple-trend-selection" aria-role="status">
-              <text wx:if="{{detailsDayVisible}}">{{detailsDayDateLabel}} · {{detailsDayLoading ? '读取中…' : (detailsDayError ? '读取失败' : '支出 ¥' + detailsDayExpenseText)}}</text>
-              <text wx:else>轻点曲线，查看当天支出</text>
+              <text wx:if="{{trendDateKey}}">{{trendDateLabel}} · 支出 {{trendAmountText ? '¥' + trendAmountText : '—'}}</text>
+              <text wx:elif="{{detailsDayVisible}}">{{detailsDayDateLabel}} · {{detailsDayLoading ? '读取中…' : (detailsDayError ? '读取失败' : '支出 ¥' + detailsDayExpenseText)}}</text>
+              <text wx:else>左右滑动查看每日支出</text>
             </view>
-            <canvas bindtouchstart="handleTrendTouchStart" bindtouchend="handleTrendTouch" type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="{{detailsMonthLabel}}每日支出走势曲线" />
+            <canvas disable-scroll="{{trendScrubbing}}" bindtouchstart="handleTrendTouchStart" bindtouchmove="handleTrendTouchMove" bindtouchend="handleTrendTouch" bindtouchcancel="cancelTrendGesture" type="2d" id="monthlyTrendCanvas" class="spending-trend__canvas" aria-label="{{detailsMonthLabel}}每日支出走势曲线" />
             <view class="spending-trend__labels">
               <text wx:for="{{detailsAnalysisSummary.trendLabels}}" wx:key="day">{{item.label}}</text>
+            </view>
+          </view>
+          <view class="spending-day-detail" wx:if="{{detailsDayVisible}}">
+            <view class="spending-day-detail__heading">
+              <view>
+                <text class="spending-day-detail__title">{{detailsDayDateLabel}}</text>
+                <text class="spending-day-detail__copy">当天支出</text>
+              </view>
+              <text class="spending-day-detail__total">¥{{detailsDayExpenseText}}</text>
+            </view>
+            <view class="spending-day-detail__state" wx:if="{{detailsDayLoading}}">正在读取当天支出…</view>
+            <view class="spending-day-detail__state spending-day-detail__state--error" wx:elif="{{detailsDayError}}">{{detailsDayError}}</view>
+            <view class="spending-day-detail__state" wx:elif="{{detailsDayTransactions.length === 0}}">当天没有支出。</view>
+            <view class="spending-day-detail__list" wx:else>
+              <view class="spending-day-detail__row" wx:for="{{detailsDayTransactions}}" wx:key="id">
+                <view>
+                  <text class="spending-day-detail__name">{{item.purposeText}}</text>
+                  <text class="spending-day-detail__meta">{{item.categoryLabel}} · {{item.occurredAtText}}</text>
+                </view>
+                <text class="spending-day-detail__amount">−¥{{item.amountText}}</text>
+              </view>
             </view>
           </view>
           <view class="apple-category-list" wx:if="{{detailsAnalysisSummary.categoryBreakdown.length}}">

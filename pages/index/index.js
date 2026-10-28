@@ -366,6 +366,10 @@ Page({
     isUndoing: false,
     highlightedTransactions: {},
     heroDisplayText: '',
+    trendScrubbing: false,
+    trendDateKey: '',
+    trendDateLabel: '',
+    trendAmountText: '',
     form: emptyForm(),
     formErrors: EMPTY_ERRORS,
     fixedExpenseItemTotalText: '0.00',
@@ -484,6 +488,7 @@ Page({
 
   onHide() {
     this._pageHidden = true;
+    this.cancelTrendGesture();
     this.clearSaveFeedback();
     this._voiceManualFallback = true;
     this.cancelTrendAnimation();
@@ -492,6 +497,7 @@ Page({
 
   onUnload() {
     this._pageHidden = true;
+    this.cancelTrendGesture();
     this.clearSaveFeedback();
     this.cancelTrendAnimation();
     this._smartParseRequestId = (this._smartParseRequestId || 0) + 1;
@@ -777,6 +783,7 @@ Page({
   switchTab(event) {
     const activeTab = event.currentTarget.dataset.tab;
     if (!['home', 'details', 'settings'].includes(activeTab)) return;
+    this.cancelTrendGesture();
     this.setData({ activeTab }, () => {
       if (activeTab === 'details') {
         const selectedMonth = this.getDetailsMonthDate() || new Date();
@@ -825,13 +832,22 @@ Page({
   },
 
   handleDetailsMonthChange(event) {
-    this.cancelTrendAnimation();
-    this._trendPlot = null;
     const offset = Number(event.currentTarget.dataset.offset);
     if (offset !== -1 && offset !== 1) return;
-    const nextKey = shiftMonthKey(this.data.detailsMonthKey, offset);
+    this.selectDetailsMonth(shiftMonthKey(this.data.detailsMonthKey, offset));
+  },
+
+  returnToCurrentMonth() {
+    this.selectDetailsMonth(toMonthKey(new Date()));
+  },
+
+  selectDetailsMonth(nextKey) {
     const currentKey = toMonthKey(new Date());
-    if (!nextKey || nextKey < REVIEW_MIN_MONTH_KEY || nextKey > currentKey) return;
+    if (!nextKey || nextKey === this.data.detailsMonthKey || nextKey < REVIEW_MIN_MONTH_KEY || nextKey > currentKey) return;
+    const previousKey = this.data.detailsMonthKey;
+    this.cancelTrendGesture();
+    this.cancelTrendAnimation();
+    this._trendPlot = null;
     const selectedMonth = monthDateFromKey(nextKey);
     this._detailsDayReadId = (this._detailsDayReadId || 0) + 1;
     this.setData(Object.assign(detailsMonthState(nextKey, new Date()), {
@@ -847,7 +863,7 @@ Page({
       if (this.data.detailsAnalysisVisible) this.refreshDetailsAnalysis(selectedMonth);
     });
     trackEvent('details_month_changed', {
-      direction: offset < 0 ? 'previous' : 'next',
+      direction: nextKey < previousKey ? 'previous' : 'next',
       isCurrent: nextKey === currentKey
     });
   },
@@ -856,39 +872,94 @@ Page({
     return this.selectDetailsDay(event.currentTarget.dataset.dateKey);
   },
 
-  handleTrendTouchStart(event) {
-    this._trendTouchStart = (event.touches || [])[0] || null;
+  cancelTrendGesture() {
+    this._trendGesture = null;
+    this.setData({ trendScrubbing: false, trendDateKey: '', trendDateLabel: '', trendAmountText: '' });
+    if (this._drawTrendSelection) this._drawTrendSelection();
   },
 
-  handleTrendTouch(event) {
+  handleTrendTouchStart(event) {
+    this.cancelTrendGesture();
     const plot = this._trendPlot;
-    const start = this._trendTouchStart;
-    this._trendTouchStart = null;
-    if (!plot || plot.monthKey !== this.data.detailsMonthKey || this.data.detailsAnalysisLoading) return;
-    const touch = (event.changedTouches || [])[0];
-    if (!start || !touch) return;
-    const relative = Number.isFinite(touch.x) && Number.isFinite(start.x);
-    const x = relative ? touch.x : touch.clientX;
-    const y = relative ? touch.y : touch.clientY;
-    const startX = relative ? start.x : start.clientX;
-    const startY = relative ? start.y : start.clientY;
-    if (![x, y, startX, startY].every(Number.isFinite)
-      || Math.abs(x - startX) > 10 || Math.abs(y - startY) > 10) return;
-    const selectAt = (localX, localY) => {
-      if (plot.monthKey !== this.data.detailsMonthKey || localX < 0 || localX > plot.width || localY < 0 || localY > plot.height) return;
-      const day = Math.round((localX - 4) * Math.max(plot.days - 1, 1) / (plot.width - 8)) + 1;
-      if (day < 1 || day > plot.days) return;
-      return this.selectDetailsDay(`${plot.monthKey}-${String(day).padStart(2, '0')}`);
-    };
-    if (relative) return selectAt(x, y);
-    if (typeof this.createSelectorQuery !== 'function') return;
-    // Canvas 2D can emit viewport coordinates; measure after scrolling instead of caching offsets.
-    return new Promise((resolve) => {
-      this.createSelectorQuery().select('#monthlyTrendCanvas').boundingClientRect().exec((results) => {
-        const rect = results && results[0];
-        resolve(rect ? selectAt(x - rect.left, y - rect.top) : undefined);
-      });
+    const touches = event.touches || [];
+    if (!plot || plot.monthKey !== this.data.detailsMonthKey || this.data.detailsAnalysisLoading || touches.length !== 1) return;
+    const start = touches[0];
+    const relative = Number.isFinite(start.x) && Number.isFinite(start.y);
+    const gesture = { plot, start, last: start, relative, axis: 'pending' };
+    this._trendGesture = gesture;
+    // Measure once per gesture, after any page scrolling. Ignore late measurements after cancellation.
+    gesture.rect = relative ? Promise.resolve({ left: 0, top: 0 }) : new Promise((resolve) => {
+      if (typeof this.createSelectorQuery !== 'function') { resolve(null); return; }
+      this.createSelectorQuery().select('#monthlyTrendCanvas').boundingClientRect().exec((results) => resolve(results && results[0]));
     });
+  },
+
+  handleTrendTouchMove(event) {
+    const gesture = this._trendGesture;
+    const touches = event.touches || [];
+    if (!gesture) return;
+    if (touches.length !== 1) { this.cancelTrendGesture(); return; }
+    const touch = touches[0];
+    gesture.last = touch;
+    const xKey = gesture.relative ? 'x' : 'clientX';
+    const yKey = gesture.relative ? 'y' : 'clientY';
+    const dx = Math.abs(touch[xKey] - gesture.start[xKey]);
+    const dy = Math.abs(touch[yKey] - gesture.start[yKey]);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (gesture.axis === 'pending') {
+      if (Math.max(dx, dy) < 8) return;
+      gesture.axis = dx > dy ? 'horizontal' : 'vertical';
+      if (gesture.axis === 'horizontal') this.setData({ trendScrubbing: true });
+    }
+    if (gesture.axis === 'horizontal') return this.previewTrendTouch(gesture, touch, true);
+  },
+
+  async previewTrendTouch(gesture, touch, clamp) {
+    const rect = await gesture.rect;
+    if (!rect || this._trendGesture !== gesture || gesture.last !== touch
+      || gesture.plot.monthKey !== this.data.detailsMonthKey) return;
+    const x = gesture.relative ? touch.x : touch.clientX - rect.left;
+    const y = gesture.relative ? touch.y : touch.clientY - rect.top;
+    const plot = gesture.plot;
+    if (![x, y].every(Number.isFinite) || (!clamp && (x < 0 || x > plot.width || y < 0 || y > plot.height))) return;
+    const today = new Date();
+    const lastDay = plot.monthKey === toMonthKey(today) ? today.getDate() : plot.days;
+    let day = Math.round((x - 4) * Math.max(plot.days - 1, 1) / (plot.width - 8)) + 1;
+    if (clamp) day = Math.max(1, Math.min(lastDay, day));
+    if (day < 1 || day > lastDay) return;
+    const dateKey = `${plot.monthKey}-${String(day).padStart(2, '0')}`;
+    gesture.dateKey = dateKey;
+    if (dateKey === this.data.trendDateKey) return;
+    const summary = this.data.detailsAnalysisSummary;
+    const point = summary && summary.dailyTrend.find((item) => item.day === day);
+    this.setData({
+      trendDateKey: dateKey,
+      trendDateLabel: formatChineseDate(parseLocalDateKey(dateKey)),
+      trendAmountText: point ? formatCents(point.amountCents) : ''
+    }, () => {
+      if (this._drawTrendSelection) this._drawTrendSelection();
+      else this.drawMonthlyTrend(summary, true);
+    });
+  },
+
+  async handleTrendTouch(event) {
+    const gesture = this._trendGesture;
+    if (!gesture) return;
+    const touch = (event.changedTouches || [])[0];
+    if (gesture.axis === 'vertical' || !touch) { this.cancelTrendGesture(); return; }
+    if (gesture.axis === 'pending') {
+      const xKey = gesture.relative ? 'x' : 'clientX';
+      const yKey = gesture.relative ? 'y' : 'clientY';
+      if (Math.abs(touch[xKey] - gesture.start[xKey]) > 10 || Math.abs(touch[yKey] - gesture.start[yKey]) > 10) {
+        this.cancelTrendGesture(); return;
+      }
+    }
+    gesture.last = touch;
+    await this.previewTrendTouch(gesture, touch, gesture.axis === 'horizontal');
+    if (this._trendGesture !== gesture) return;
+    const dateKey = gesture.dateKey;
+    this.cancelTrendGesture();
+    if (dateKey) return this.selectDetailsDay(dateKey);
   },
 
   selectDetailsDay(dateKey) {
@@ -900,7 +971,10 @@ Page({
       detailsDayDateKey: dateKey,
       detailsDayDateLabel: formatChineseDate(date),
       detailsDayVisible: true
-    }, () => this.drawMonthlyTrend(this.data.detailsAnalysisSummary, true));
+    }, () => {
+      if (this._drawTrendSelection) this._drawTrendSelection();
+      else this.drawMonthlyTrend(this.data.detailsAnalysisSummary, true);
+    });
     return this.refreshDetailsCalendarDay(dateKey);
   },
 
@@ -984,6 +1058,7 @@ Page({
   },
 
   toggleDetailsAnalysis() {
+    this.cancelTrendGesture();
     const detailsAnalysisVisible = !this.data.detailsAnalysisVisible;
     this.setData({ detailsAnalysisVisible }, () => {
       if (detailsAnalysisVisible) {
@@ -1052,6 +1127,7 @@ Page({
   },
 
   cancelTrendAnimation() {
+    this._drawTrendSelection = null;
     this._trendRenderId = (this._trendRenderId || 0) + 1;
     if (this._trendCanvas && this._trendFrame !== undefined) {
       this._trendCanvas.cancelAnimationFrame(this._trendFrame);
@@ -1116,8 +1192,8 @@ Page({
           const last = coords[coords.length - 1];
           context.beginPath(); context.arc(last.x, last.y, 3, 0, Math.PI * 2); context.fillStyle = theme.primary; context.fill();
           context.restore();
-          const selectedIndex = valid.findIndex((point) => this.data.detailsDayVisible
-            && `${this.data.detailsMonthKey}-${String(point.day).padStart(2, '0')}` === this.data.detailsDayDateKey);
+          const selectedKey = this.data.trendDateKey || (this.data.detailsDayVisible ? this.data.detailsDayDateKey : '');
+          const selectedIndex = valid.findIndex((point) => `${this.data.detailsMonthKey}-${String(point.day).padStart(2, '0')}` === selectedKey);
           if (selectedIndex >= 0 && progress === 1) {
             const point = coords[selectedIndex];
             context.beginPath(); context.moveTo(point.x, top); context.lineTo(point.x, bottom);
@@ -1127,6 +1203,10 @@ Page({
             context.beginPath(); context.arc(point.x, point.y, 3, 0, Math.PI * 2);
             context.fillStyle = theme.primary; context.fill();
           }
+        };
+        this._drawTrendSelection = () => {
+          if (this._trendFrame !== undefined) { canvas.cancelAnimationFrame(this._trendFrame); this._trendFrame = undefined; }
+          draw(1);
         };
         const reduced = immediate || this.data.themeSettings.reducedMotion || typeof canvas.requestAnimationFrame !== 'function';
         if (reduced) { draw(1); return; }
@@ -1441,6 +1521,7 @@ Page({
   handleDetailsDirection(event) {
     const detailsDirection = event.currentTarget.dataset.direction;
     if (!['expense', 'income'].includes(detailsDirection)) return;
+    this.cancelTrendGesture();
     this.cancelTrendAnimation();
     const visible = this.data.detailsTransactions.filter((item) => item.direction === detailsDirection);
     this.setData({ detailsDirection, detailsVisibleTransactions: visible, detailsRecordCount: visible.length }, () => {
